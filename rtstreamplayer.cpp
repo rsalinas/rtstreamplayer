@@ -82,7 +82,7 @@ class RtStreamPlayer {
       buf->usedSamples = file.read(reinterpret_cast<short *>(buf->buffer),
                                    sizeof(buf->buffer) / 2);
       //~ std::clog << "read block: " << buf->usedSamples << " samples" <<
-      //std::endl;
+      // std::endl;
       if (buf->usedSamples == 0) {
         std::clog << "EOF, must exit!" << std::endl;
 
@@ -125,7 +125,7 @@ public:
           std::string("Invalid file format, PCM16 expected"));
     }
     //    if (file.format() &
-    readThread = std::thread{&RtStreamPlayer::readInput, this};
+    //~ readThread = std::thread{&RtStreamPlayer::readInput, this};
 
     SDL_AudioSpec wanted;
 
@@ -147,9 +147,11 @@ public:
   }
 
   int run() {
-    while (!mustExit) {
-      SDL_Delay(500);
-    }
+    //~ while (!mustExit) {
+    //~ SDL_Delay(500);
+    //~ }
+    readInput();
+
     SDL_CloseAudio();
   }
 
@@ -167,7 +169,7 @@ public:
     {
       std::unique_lock<std::mutex> lock{mutex};
       //~ std::clog << "fill buffer = " << readyBuffers.size() <<"  len=="<<
-      //len<< std::endl;
+      // len<< std::endl;
 
       auto now = steady_clock::now();
       std::chrono::duration<double> time_span =
@@ -214,7 +216,9 @@ public:
     freeCondVar.notify_one();
   }
 
-  ~RtStreamPlayer() { readThread.join(); }
+  ~RtStreamPlayer() {
+    //~ readThread.join();
+  }
 };
 
 int main(int argc, char **argv) {
