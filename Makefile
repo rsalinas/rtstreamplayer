@@ -1,7 +1,7 @@
 
 
 rtstreamplayer: rtstreamplayer.cpp
-	g++ $< -lSDL -lsndfile -o $@ -lpthread -g
+	$(CXX) $< -lSDL -lsndfile -o $@ -lpthread -g  -std=c++0x
  
 
 clean:

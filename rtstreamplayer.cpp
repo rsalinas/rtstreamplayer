@@ -27,6 +27,7 @@ class RtStreamPlayer {
   decltype(steady_clock::now()) startTime = steady_clock::now();
   const float SYNC_TIME = 1;
   const float MIN_BUFFER_TIME = 3;
+  const float MARGIN_TIME = 2;
   size_t minBufferCount = 0;
 
   std::mutex mutex;
@@ -34,7 +35,7 @@ class RtStreamPlayer {
   std::condition_variable freeCondVar;
   class AudioBuffer {
   public:
-    static const size_t bufferSize = 4096;
+    static const size_t bufferSize = 32*1024;
     Uint8 buffer[bufferSize];
     float avg;
     sf_count_t usedSamples;
@@ -65,16 +66,23 @@ class RtStreamPlayer {
         //     std::clog << "read input iterating" << std::endl;
         std::unique_lock<std::mutex> lock{mutex};
 
-        if (freeBuffers.empty() && state != Playing) {
+        if (freeBuffers.empty() /*&& state != Playing*/) {
+          if (state == Playing) {
+            size_t swallowed = 0;
+            while (readyBuffers.size() > secondsToBuffers(MIN_BUFFER_TIME)) {
+              buf = readyBuffers.back();
+              readyBuffers.pop_back();
+              freeBuffers.push_back(buf);
+              swallowed++;
+            }
+             std::clog << "Swallow excess packets: " << swallowed << std::endl;
+
+          }
           //~ std::clog << "Recycling old block" << std::endl;
           buf = readyBuffers.front();
           readyBuffers.pop_front();
         } else {
-          while (freeBuffers.empty()) {
-            //      std::clog << "no free buffers"  << std::endl;
-            //~ std::clog << "input: waiting for free buffer"  << std::endl;
-            freeCondVar.wait(lock);
-          }
+        
           buf = freeBuffers.back();
           freeBuffers.pop_back();
         }
@@ -100,14 +108,17 @@ class RtStreamPlayer {
   }
 
   std::thread readThread;
+  void print(const std::string & message, const SDL_AudioSpec obtained) {
+    std::clog << message << ": " << obtained.freq << " " << int(obtained.channels) << " chan, " << obtained.samples << " samples" << std::endl;
 
+  }
 public:
   RtStreamPlayer(const char *filename) : file(filename) {
     if (!file.samplerate()) {
       throw std::runtime_error("Invalid format");
     }
 
-    size_t nBufs = secondsToBuffers(MIN_BUFFER_TIME) + 1;
+    size_t nBufs = secondsToBuffers(MIN_BUFFER_TIME+ MARGIN_TIME) + 1;
     std::clog << "secondsToBuffers : " << nBufs << " "
               << buffersToSeconds(nBufs) << std::endl;
     for (size_t i = 0; i < nBufs; i++) {
@@ -127,21 +138,24 @@ public:
     //    if (file.format() &
     //~ readThread = std::thread{&RtStreamPlayer::readInput, this};
 
-    SDL_AudioSpec wanted;
+    SDL_AudioSpec wanted, obtained;
 
     /* Set the audio format */
     wanted.freq = file.samplerate();
     wanted.format = AUDIO_S16;
     wanted.channels = file.channels();
     wanted.samples = AudioBuffer::bufferSize;
+    int wantedSamples = wanted.samples;
     wanted.callback = fill_audio_adaptor;
     wanted.userdata = this;
 
     /* Open the audio device, forcing the desired format */
-    if (SDL_OpenAudio(&wanted, NULL) < 0)
+    if (SDL_OpenAudio(&wanted, &obtained) < 0)
       throw std::runtime_error(std::string("Couldn't open audio: ") +
                                SDL_GetError());
-
+    std::clog << "Wanted: " << wantedSamples << " got " << wanted.samples<< std::endl;
+    print("wanted " , wanted);
+    print("got " , obtained);
     std::clog << "unpausing" << std::endl;
     SDL_PauseAudio(0);
   }
