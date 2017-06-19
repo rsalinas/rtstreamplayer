@@ -15,3 +15,4 @@ target_link_libraries(${PROJECT_NAME} ${SNDFILE_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} ${SDL_SOUND_LIBRARY})
 target_link_libraries(${PROJECT_NAME} ${SDL_LIBRARY})
 
+add_executable(popentest popentest.cpp)
