@@ -25,6 +25,9 @@ using std::chrono::duration;
 using std::chrono::duration_cast;
 
 static FILE * shellProcess = popen("/bin/sh -x", "w");
+class RtStreamPlayer;
+
+static std::unique_ptr<RtStreamPlayer> instance;
 
 std::string nowStr( const char* format = "%c" )
 {
@@ -42,18 +45,9 @@ static void logDebug(const std::string &message) {
     std::clog << nowStr() << ": " << message << std::endl;
 }
 
-void signalHandler(int sig) {
-    std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
-    switch (sig) {
-    case SIGUSR1:
-        fputs("daemon -n player -- mplayer /home/rsalinas/Downloads/lcwo-001.mp3", shellProcess);
-        fflush(shellProcess);
-        break;
-    case SIGUSR2:
-        fputs("daemon -n player --stop", shellProcess);
-        fflush(shellProcess);
-        break;
-    }
+void runCommand(const std::string & cmd) {
+    fputs((cmd+"\n").c_str(), shellProcess);
+    fflush(shellProcess);
 }
 
 class RtStreamPlayer {
@@ -86,7 +80,6 @@ class RtStreamPlayer {
     std::deque<AudioBuffer *> readyBuffers, freeBuffers;
     size_t skipped = 0;
 
-    bool eofReached = false;
     std::unique_ptr<SndfileHandle> sndfile;
     bool mustExit = false;
     size_t bufferSize;
@@ -103,7 +96,7 @@ class RtStreamPlayer {
     void readInput() {
         logDebug(__FUNCTION__);
 
-        while (!eofReached) {
+        while (!mustExit) {
 
             AudioBuffer *buf = nullptr;
 
@@ -170,8 +163,6 @@ public:
         if (!sndfile->samplerate()) {
             throw std::runtime_error("Invalid format");
         }
-        signal(SIGUSR1, signalHandler);
-        signal(SIGUSR2, signalHandler);
         samplerate = sndfile->samplerate();
         channels = sndfile->channels();
 
@@ -218,7 +209,7 @@ public:
         }
         std::clog << "Buffer count: " << nBufs << std::endl;
 
-        std::clog << "Starting playback..." << std::endl;
+        logInfo("Starting playback...");
         SDL_PauseAudio(0);
     }
 
@@ -251,8 +242,7 @@ public:
                     readyBuffers.size() >= secondsToBuffers(MIN_BUFFER_TIME)) {
                 state = Playing;
                 raise(SIGUSR2);
-                std::clog << "player: Buffering -> Playing. ellapsed == "
-                          << time_span.count() << std::endl;
+                logInfo("player: Buffering -> Playing. ellapsed == " + std::to_string(time_span.count()));
             }
             if (state != Playing) {
                 //~ std::clog << "player: syncing"  << std::endl;
@@ -276,7 +266,7 @@ public:
         }
 
         if (buf->usedSamples == 0) {
-            std::clog << "player found 0, must exit!" << std::endl;
+            logInfo("player found 0, must exit");
             mustExit = true;
         }
 
@@ -297,7 +287,31 @@ public:
     ~RtStreamPlayer() {
         //~ readThread.join();
     }
+    void pleaseFinish() {
+        mustExit = true;
+    }
 };
+
+
+void signalHandler(int sig) {
+    std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
+    switch (sig) {
+    case SIGUSR1:
+        logInfo("Starting backup source");
+        runCommand("daemon -n player -- mplayer /home/rsalinas/Downloads/lcwo-001.mp3");
+        break;
+    case SIGUSR2:
+        logInfo("Stopping backup source");
+        runCommand("daemon -n player --stop");
+        break;
+    case SIGINT:
+    case SIGTERM:
+
+        instance->pleaseFinish();
+        break;
+    }
+}
+
 
 int main(int argc, char **argv) {
 
@@ -309,7 +323,13 @@ int main(int argc, char **argv) {
     fputs("date\n", shellProcess);
     fflush(shellProcess);
     try {
-        (RtStreamPlayer(argv[1])).run();
+        instance.reset(new RtStreamPlayer(argv[1]));
+        signal(SIGUSR1, signalHandler);
+        signal(SIGUSR2, signalHandler);
+        signal(SIGINT, signalHandler);
+        signal(SIGTERM, signalHandler);
+
+        instance->run();
     } catch (const std::exception &e) {
         std::clog << "Exception: " << e.what() << std::endl;
     }
