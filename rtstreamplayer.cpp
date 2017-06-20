@@ -20,52 +20,21 @@
 #include <thread>
 #include <unistd.h>
 
+#include "buffer.h"
+#include "logging.h"
+#include "popen.h"
+#include "process.h"
+
 using std::chrono::steady_clock;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 
 
-class Popen
-{
-    FILE * f = nullptr;
-public:
-    Popen(const char *cmd, const char *mode) : f(popen(cmd, mode)) {
-
-    }
-
-    FILE * getFile() const {
-        return f;
-    }
-
-    ~Popen() {
-        pclose(f);
-    }
-};
-static Popen shellProcess{"/bin/sh -x", "w"};
 class RtStreamPlayer;
 
 static std::unique_ptr<RtStreamPlayer> instance;
 
-std::string nowStr( const char* format = "%c" )
-{
-    std::time_t t = std::time(0) ;
-    char cstr[128] ;
-    std::strftime( cstr, sizeof(cstr), format, std::localtime(&t) ) ;
-    return cstr ;
-}
 
-static void logInfo(const std::string &message) {
-    std::clog << nowStr() << ": " << message << std::endl;
-}
-
-static void logDebug(const std::string &message) {
-    std::clog << nowStr() << ": " << message << std::endl;
-}
-
-void runCommand(const std::string & cmd) {
-    fputs((cmd+"\n").c_str(), shellProcess.getFile());
-    fflush(shellProcess.getFile());
-}
 
 class RtStreamPlayer {
     //const SDL_AudioSpec sdlAudioSpec;
@@ -73,27 +42,19 @@ class RtStreamPlayer {
     std::unique_ptr<Popen> inputProcess;
     enum State { WaitingForInput, Buffering, Playing };
     State state = WaitingForInput;
+    decltype(steady_clock::now()) appStartTime = steady_clock::now();
+    float downTime = 0;
     decltype(steady_clock::now()) startTime = steady_clock::now(), backupStarted;
     const float SYNC_TIME = 1;
-    const float MIN_BUFFER_TIME = 1;
+    const float MIN_BUFFER_TIME = 1.5;
     const float MARGIN_TIME = 1;
     size_t minBufferCount = 0;
     int samplerate = 0, channels = 0;
+    size_t underrunCount = 0;
 
     std::mutex mutex;
     std::condition_variable readyCondVar;
     std::condition_variable freeCondVar;
-    class AudioBuffer {
-    public:
-        AudioBuffer(size_t length) : buffer(new Uint8[length]), length(length)
-        {
-        }
-
-        Uint8 *buffer;
-        size_t length;
-        float avg;
-        sf_count_t usedSamples;
-    };
     std::deque<AudioBuffer *> readyBuffers, freeBuffers;
     std::unique_ptr<SndfileHandle> sndfile;
     bool mustExit = false;
@@ -119,9 +80,7 @@ class RtStreamPlayer {
             AudioBuffer *buf = nullptr;
 
             {
-                //     std::clog << "read input iterating" << std::endl;
                 std::unique_lock<std::mutex> lock{mutex};
-
                 if (freeBuffers.empty() /*&& state != Playing*/) {
                     if (state == Playing) {
                         size_t swallowed = 0;
@@ -132,7 +91,6 @@ class RtStreamPlayer {
                             swallowed++;
                         }
                         logInfo("Drop excess packets: " + std::to_string(swallowed));
-
                     }
                     buf = readyBuffers.front();
                     readyBuffers.pop_front();
@@ -144,6 +102,7 @@ class RtStreamPlayer {
             }
             buf->usedSamples = sndfile->read(reinterpret_cast<short *>(buf->buffer),
                                              buf->length / 2);
+            buf->calculateAverage();
             
             //std::clog << "read block: " << buf->usedSamples << " samples" << " " << freeBuffers.size() << " free buffers, " << readyBuffers.size() << " ready buffers" <<  std::endl;
             if (buf->usedSamples == 0) {
@@ -165,13 +124,10 @@ class RtStreamPlayer {
         }
     }
 
-    void print(const std::string & message, const SDL_AudioSpec obtained) {
-        std::clog << message << ": " << obtained.freq << " " << int(obtained.channels) << " chan, " << obtained.samples << " samples" << std::endl;
-    }
 
 
     std::unique_ptr<Popen> openProcess() {
-        return std::unique_ptr<Popen>(new Popen{"./source.sh", "r"});
+        return std::unique_ptr<Popen>(new Popen{"exec ./source.sh", "r"});
     }
 
 public:
@@ -250,7 +206,10 @@ public:
                     readyBuffers.size() >= secondsToBuffers(MIN_BUFFER_TIME)) {
                 state = Playing;
                 raise(SIGUSR2);
+                downTime += time_span.count();
+                auto totalTime = duration_cast<duration<double>>(now - appStartTime).count();
                 logInfo("player: Buffering -> Playing. ellapsed == " + std::to_string(time_span.count()));
+                logInfo("Downtime: " + std::to_string(downTime) +  " Total: " + std::to_string(totalTime));
             }
             if (state != Playing) {
                 //~ std::clog << "player: syncing"  << std::endl;
@@ -263,7 +222,8 @@ public:
                 return;
             }
             if (readyBuffers.empty()) {
-                std::clog << "buffer underrun" << std::endl;
+                underrunCount++;
+                logInfo("Buffer underrun. Count == " + std::to_string(underrunCount));
                 startTime = steady_clock::now();
                 state = WaitingForInput;
                 fillWithSilence();
@@ -275,15 +235,16 @@ public:
 
         if (buf->usedSamples == 0) {
             logInfo("player found 0");
-//            mustExit = true;
         }
 
         if (buf->usedSamples * 2 != len) {
-            std::clog << "buffer size mismatch!" << buf->usedSamples * 2 << " vs "
+            logWarn("buffer size mismatch!");
+            std::clog << buf->usedSamples * 2 << " vs "
                       << len << std::endl;
             fillWithSilence();
         } else {
             memcpy(stream, buf->buffer, buf->usedSamples * 2);
+//            buf->printAvg();
         }
         //~ std::clog << "usedSamples: " << buf->usedSamples << " bufsize== " << len
         //<< std::endl;
@@ -291,6 +252,9 @@ public:
         std::unique_lock<std::mutex> lock{mutex};
         freeBuffers.push_back(buf);
         freeCondVar.notify_one();
+        auto fbs = freeBuffers.size();
+        auto rbs = readyBuffers.size();
+        logInfo("Buffer state: " + std::to_string(rbs)+ " free: " + std::to_string(fbs)+ " total: " + std::to_string(fbs+rbs));
     }
 
     ~RtStreamPlayer() {
@@ -309,11 +273,11 @@ void signalHandler(int sig) {
     switch (sig) {
     case SIGUSR1:
         logInfo("Starting backup source");
-        runCommand("daemon -n player -- mplayer /home/rsalinas/Downloads/lcwo-001.mp3");
+        runCommand("./failed.sh");
         break;
     case SIGUSR2:
         logInfo("Stopping backup source");
-        runCommand("daemon -n player --stop");
+        runCommand("./restored.sh");
         break;
     case SIGINT:
     case SIGTERM:
@@ -327,6 +291,8 @@ int main(int argc, char **argv)
 {
     try {
         runCommand("date");
+
+        runCommand("trap date EXIT");
         instance.reset(new RtStreamPlayer);
         signal(SIGUSR1, signalHandler);
         signal(SIGUSR2, signalHandler);

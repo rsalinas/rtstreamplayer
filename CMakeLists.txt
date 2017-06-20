@@ -9,7 +9,7 @@ include_directories(${SDL_INCLUDE_DIR})
 find_package(PkgConfig REQUIRED)
 pkg_search_module(SNDFILE REQUIRED sndfile)
 
-add_executable(${PROJECT_NAME} rtstreamplayer.cpp)
+add_executable(${PROJECT_NAME} rtstreamplayer.cpp popen.h buffer.h logging.h process.h)
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${SNDFILE_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${SNDFILE_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} ${SDL_SOUND_LIBRARY})
