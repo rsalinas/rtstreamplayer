@@ -4,18 +4,24 @@ public:
     {
     }
 
-    Uint8 *buffer;
-    size_t length;
+    ~AudioBuffer() {
+        delete [] buffer;
+    }
+
+    Uint8 * const buffer;
+    const size_t length;
+
     float avg=0, max=0;
     sf_count_t usedSamples;
+
     void calculateAverage() {
-        short * ib = reinterpret_cast<short*>(buffer);
+        auto samples = reinterpret_cast<short*>(buffer);
         unsigned long long int sum=0;
-        auto maxVal=*ib;
+        auto maxVal=*samples;
         for (size_t i=0; i < usedSamples; i++) {
-            sum+=ib[i]*ib[i];
-            if (ib[i] > maxVal)
-                maxVal = ib[i];
+            sum+=samples[i]*samples[i];
+            if (samples[i] > maxVal)
+                maxVal = samples[i];
         }
         avg = sqrt(float(sum))/usedSamples;
         max = maxVal;

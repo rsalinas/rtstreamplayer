@@ -10,14 +10,13 @@
 #include <csignal>
 #include <deque>
 #include <iostream>
+#include <list>
 #include <memory>
 #include <mutex>
-#include <pthread.h>
 #include <SDL/SDL_audio.h>
 #include <SDL/SDL.h>
 #include <sndfile.hh>
 #include <stdexcept>
-#include <thread>
 #include <unistd.h>
 
 #include "buffer.h"
@@ -34,12 +33,11 @@ class RtStreamPlayer;
 
 static std::unique_ptr<RtStreamPlayer> instance;
 
-
-
 class RtStreamPlayer {
     //const SDL_AudioSpec sdlAudioSpec;
 
     std::unique_ptr<Popen> inputProcess;
+    std::unique_ptr<SndfileHandle> sndfile;
     enum State { WaitingForInput, Buffering, Playing };
     State state = WaitingForInput;
     decltype(steady_clock::now()) appStartTime = steady_clock::now();
@@ -48,17 +46,18 @@ class RtStreamPlayer {
     const float SYNC_TIME = 1;
     const float MIN_BUFFER_TIME = 1.5;
     const float MARGIN_TIME = 1;
+    const float BACKUP_WAIT = 5;
     size_t minBufferCount = 0;
     int samplerate = 0, channels = 0;
     size_t underrunCount = 0;
 
     std::mutex mutex;
-    std::condition_variable readyCondVar;
     std::condition_variable freeCondVar;
-    std::deque<AudioBuffer *> readyBuffers, freeBuffers;
-    std::unique_ptr<SndfileHandle> sndfile;
+    std::deque<AudioBuffer *> readyBuffers;
+    std::list<AudioBuffer *> freeBuffers;
     bool mustExit = false;
     size_t bufferSize;
+    bool backupRunning = true;
 
     size_t secondsToBuffers(float seconds)
     {
@@ -76,26 +75,23 @@ class RtStreamPlayer {
         logDebug(__FUNCTION__);
 
         while (!mustExit) {
-
             AudioBuffer *buf = nullptr;
-
             {
                 std::unique_lock<std::mutex> lock{mutex};
                 if (freeBuffers.empty() /*&& state != Playing*/) {
                     if (state == Playing) {
-                        size_t swallowed = 0;
+                        size_t dropped = 0;
                         while (readyBuffers.size() > secondsToBuffers(MIN_BUFFER_TIME)) {
                             buf = readyBuffers.back();
                             readyBuffers.pop_back();
                             freeBuffers.push_back(buf);
-                            swallowed++;
+                            dropped++;
                         }
-                        logInfo("Drop excess packets: " + std::to_string(swallowed));
+                        logInfo("Drop excess packets: " + std::to_string(dropped));
                     }
                     buf = readyBuffers.front();
                     readyBuffers.pop_front();
                 } else {
-
                     buf = freeBuffers.back();
                     freeBuffers.pop_back();
                 }
@@ -106,16 +102,16 @@ class RtStreamPlayer {
             
             //std::clog << "read block: " << buf->usedSamples << " samples" << " " << freeBuffers.size() << " free buffers, " << readyBuffers.size() << " ready buffers" <<  std::endl;
             if (buf->usedSamples == 0) {
-                logInfo("EOF, must reload");
+                logInfo("EOF in input file");
                 sndfile.reset();
                 inputProcess.reset();
+                logInfo("Reopening process");
                 inputProcess = openProcess();
-                sndfile.reset(new SndfileHandle(fileno(inputProcess->getFile()), false));
+                sndfile.reset(new SndfileHandle(inputProcess->getFd(), false));
             }
 
             std::unique_lock<std::mutex> lock{mutex};
             readyBuffers.push_back(buf);
-            readyCondVar.notify_one();
             if (state == WaitingForInput) {
                 state = Buffering;
                 std::clog << "WaitingForInput -> Buffering" << std::endl;
@@ -124,14 +120,12 @@ class RtStreamPlayer {
         }
     }
 
-
-
     std::unique_ptr<Popen> openProcess() {
         return std::unique_ptr<Popen>(new Popen{"exec ./source.sh", "r"});
     }
 
 public:
-    RtStreamPlayer() : inputProcess(openProcess()), sndfile(new SndfileHandle(fileno(inputProcess->getFile()), false)) {
+    RtStreamPlayer() : inputProcess(openProcess()), sndfile(new SndfileHandle(inputProcess->getFd(), false)) {
         if (!sndfile->samplerate()) {
             throw std::runtime_error("Invalid format");
         }
@@ -149,11 +143,10 @@ public:
 
         SDL_AudioSpec wanted, obtained;
 
-        /* Set the audio format */
         wanted.freq = sndfile->samplerate();
         wanted.format = AUDIO_S16;
         wanted.channels = sndfile->channels();
-        wanted.samples = sndfile->samplerate()*sndfile->channels()/2/2;
+        wanted.samples = 32768; // sndfile->samplerate()*sndfile->channels()/2/2;
         int wantedSamples = wanted.samples;
         wanted.callback = [](void *udata, Uint8 *stream, int len) {
             static_cast<RtStreamPlayer *>(udata)->fill_audio(stream, len);
@@ -169,7 +162,7 @@ public:
         bufferSize = obtained.size;
         std::clog << "Audio in a buffer: " << buffersToSeconds(1) << std::endl;
 
-        size_t nBufs = secondsToBuffers(MIN_BUFFER_TIME+ MARGIN_TIME) + 1;
+        size_t nBufs = secondsToBuffers(MIN_BUFFER_TIME + MARGIN_TIME);
         std::clog << "secondsToBuffers : " << nBufs << " "
                   << buffersToSeconds(nBufs) << std::endl;
 
@@ -178,34 +171,39 @@ public:
             freeBuffers.push_back(audioBuffer);
         }
         std::clog << "Buffer count: " << nBufs << std::endl;
-
-        logInfo("Starting playback...");
-        SDL_PauseAudio(0);
     }
 
     int run() {
+        logInfo("Starting playback...");
+        SDL_PauseAudio(0);
         readInput();
     }
 
     void fill_audio(Uint8 *stream, int len)
     {
-        auto fillWithSilence = [stream, len] {
-            memset(stream, 0, len);
+        bool lastWasSilence = false;
+        auto fillWithSilence = [stream, len, &lastWasSilence] {
+            if (!lastWasSilence) {
+                memset(stream, 0, len);
+                lastWasSilence = true;
+            }
         };
         AudioBuffer *buf = nullptr;
+        auto now = steady_clock::now();
+        std::chrono::duration<double> time_span =
+                duration_cast<duration<double>>(now - startTime);
         {
             std::unique_lock<std::mutex> lock{mutex};
             //~ std::clog << "fill buffer = " << readyBuffers.size() <<"  len=="<<
             // len<< std::endl;
 
-            auto now = steady_clock::now();
-            std::chrono::duration<double> time_span =
-                    duration_cast<duration<double>>(now - startTime);
-
             if (state == Buffering && time_span.count() > SYNC_TIME &&
                     readyBuffers.size() >= secondsToBuffers(MIN_BUFFER_TIME)) {
                 state = Playing;
-                raise(SIGUSR2);
+                if (backupRunning) {
+                    raise(SIGUSR2);
+                    backupRunning = false;
+                }
                 downTime += time_span.count();
                 auto totalTime = duration_cast<duration<double>>(now - appStartTime).count();
                 logInfo("player: Buffering -> Playing. ellapsed == " + std::to_string(time_span.count()));
@@ -214,10 +212,10 @@ public:
             if (state != Playing) {
                 //~ std::clog << "player: syncing"  << std::endl;
                 fillWithSilence();
-                if (startTime != backupStarted && time_span.count() > 5) {
+                if (startTime != backupStarted && time_span.count() > BACKUP_WAIT) {
                     raise(SIGUSR1);
+                    backupRunning = true;
                     backupStarted = startTime;
-
                 }
                 return;
             }
@@ -243,8 +241,9 @@ public:
                       << len << std::endl;
             fillWithSilence();
         } else {
+            lastWasSilence = false;
             memcpy(stream, buf->buffer, buf->usedSamples * 2);
-//            buf->printAvg();
+            //            buf->printAvg();
         }
         //~ std::clog << "usedSamples: " << buf->usedSamples << " bufsize== " << len
         //<< std::endl;
@@ -252,15 +251,21 @@ public:
         std::unique_lock<std::mutex> lock{mutex};
         freeBuffers.push_back(buf);
         freeCondVar.notify_one();
-        auto fbs = freeBuffers.size();
-        auto rbs = readyBuffers.size();
-        logInfo("Buffer state: " + std::to_string(rbs)+ " free: " + std::to_string(fbs)+ " total: " + std::to_string(fbs+rbs));
+        //        auto fbs = freeBuffers.size();
+        //        auto rbs = readyBuffers.size();
+        //logInfo("Buffer state: " + std::to_string(rbs)+ " free: " + std::to_string(fbs)+ " total: " + std::to_string(fbs+rbs));
     }
 
     ~RtStreamPlayer() {
         logInfo("Closing");
         //~ readThread.join();
         SDL_CloseAudio();
+        for (auto buffer : readyBuffers) {
+            delete buffer;
+        }
+        for (auto buffer : freeBuffers) {
+            delete buffer;
+        }
     }
     void pleaseFinish() {
         mustExit = true;
@@ -290,9 +295,6 @@ void signalHandler(int sig) {
 int main(int argc, char **argv)
 {
     try {
-        runCommand("date");
-
-        runCommand("trap date EXIT");
         instance.reset(new RtStreamPlayer);
         signal(SIGUSR1, signalHandler);
         signal(SIGUSR2, signalHandler);
