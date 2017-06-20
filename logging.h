@@ -1,7 +1,7 @@
 
-std::string nowStr( const char* format = "%c" )
+std::string nowStr( const char* format = "%F %T" )
 {
-    std::time_t t = std::time(0) ;
+    std::time_t t = std::time(0);
     char cstr[128];
     std::strftime( cstr, sizeof(cstr), format, std::localtime(&t) ) ;
     return cstr;

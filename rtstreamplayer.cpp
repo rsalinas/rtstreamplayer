@@ -114,7 +114,7 @@ class RtStreamPlayer {
             readyBuffers.push_back(buf);
             if (state == WaitingForInput) {
                 state = Buffering;
-                std::clog << "WaitingForInput -> Buffering" << std::endl;
+                logInfo("WaitingForInput -> Buffering");
                 startTime = steady_clock::now();
             }
         }
@@ -222,7 +222,7 @@ public:
             if (readyBuffers.empty()) {
                 underrunCount++;
                 logInfo("Buffer underrun. Count == " + std::to_string(underrunCount));
-                startTime = steady_clock::now();
+                startTime = now;
                 state = WaitingForInput;
                 fillWithSilence();
                 return;
