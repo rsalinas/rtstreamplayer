@@ -5,9 +5,12 @@
  */
 
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
+#include <csignal>
 #include <deque>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <pthread.h>
 #include <SDL/SDL_audio.h>
@@ -16,15 +19,29 @@
 #include <stdexcept>
 #include <thread>
 #include <unistd.h>
-#include <memory>
-#include <cmath>
-#include <csignal>
 
 using std::chrono::steady_clock;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 
-static FILE * shellProcess = popen("/bin/sh -x", "w");
+
+class Popen
+{
+    FILE * f = nullptr;
+public:
+    Popen(const char *cmd, const char *mode) : f(popen(cmd, mode)) {
+
+    }
+
+    FILE * getFile() const {
+        return f;
+    }
+
+    ~Popen() {
+        pclose(f);
+    }
+};
+static Popen shellProcess{"/bin/sh -x", "w"};
 class RtStreamPlayer;
 
 static std::unique_ptr<RtStreamPlayer> instance;
@@ -46,14 +63,14 @@ static void logDebug(const std::string &message) {
 }
 
 void runCommand(const std::string & cmd) {
-    fputs((cmd+"\n").c_str(), shellProcess);
-    fflush(shellProcess);
+    fputs((cmd+"\n").c_str(), shellProcess.getFile());
+    fflush(shellProcess.getFile());
 }
 
 class RtStreamPlayer {
     //const SDL_AudioSpec sdlAudioSpec;
 
-    FILE * inputProcess = nullptr;
+    std::unique_ptr<Popen> inputProcess;
     enum State { WaitingForInput, Buffering, Playing };
     State state = WaitingForInput;
     decltype(steady_clock::now()) startTime = steady_clock::now(), backupStarted;
@@ -68,8 +85,8 @@ class RtStreamPlayer {
     std::condition_variable freeCondVar;
     class AudioBuffer {
     public:
-        AudioBuffer(size_t length) : buffer(new Uint8[length]), length(length) {
-
+        AudioBuffer(size_t length) : buffer(new Uint8[length]), length(length)
+        {
         }
 
         Uint8 *buffer;
@@ -78,17 +95,18 @@ class RtStreamPlayer {
         sf_count_t usedSamples;
     };
     std::deque<AudioBuffer *> readyBuffers, freeBuffers;
-    size_t skipped = 0;
-
     std::unique_ptr<SndfileHandle> sndfile;
     bool mustExit = false;
     size_t bufferSize;
-    size_t secondsToBuffers(float seconds) {
-//        std::clog << __FUNCTION__ << " " << samplerate << " " << channels << std::endl;
+
+    size_t secondsToBuffers(float seconds)
+    {
+        //        std::clog << __FUNCTION__ << " " << samplerate << " " << channels << std::endl;
         return size_t( ceil(seconds * samplerate * channels * 2 /
                             bufferSize));
     }
-    float buffersToSeconds(size_t buffers) {
+    float buffersToSeconds(size_t buffers)
+    {
         return float(buffers) * bufferSize /
                 (float(sndfile->samplerate()) * sndfile->channels() * 2);
     }
@@ -130,15 +148,13 @@ class RtStreamPlayer {
             //std::clog << "read block: " << buf->usedSamples << " samples" << " " << freeBuffers.size() << " free buffers, " << readyBuffers.size() << " ready buffers" <<  std::endl;
             if (buf->usedSamples == 0) {
                 logInfo("EOF, must reload");
-                pclose(inputProcess);
                 sndfile.reset();
+                inputProcess.reset();
                 inputProcess = openProcess();
-                sndfile.reset(new SndfileHandle(fileno(inputProcess), false));
-                //eofReached = true;
+                sndfile.reset(new SndfileHandle(fileno(inputProcess->getFile()), false));
             }
 
             std::unique_lock<std::mutex> lock{mutex};
-
             readyBuffers.push_back(buf);
             readyCondVar.notify_one();
             if (state == WaitingForInput) {
@@ -149,24 +165,22 @@ class RtStreamPlayer {
         }
     }
 
-    std::thread readThread;
     void print(const std::string & message, const SDL_AudioSpec obtained) {
         std::clog << message << ": " << obtained.freq << " " << int(obtained.channels) << " chan, " << obtained.samples << " samples" << std::endl;
-
     }
-    FILE * openProcess() {
-        return popen("./source.sh", "r");
+
+
+    std::unique_ptr<Popen> openProcess() {
+        return std::unique_ptr<Popen>(new Popen{"./source.sh", "r"});
     }
 
 public:
-    RtStreamPlayer(const char *filename) : inputProcess(openProcess()), sndfile(new SndfileHandle(fileno(inputProcess), false)) {
+    RtStreamPlayer() : inputProcess(openProcess()), sndfile(new SndfileHandle(fileno(inputProcess->getFile()), false)) {
         if (!sndfile->samplerate()) {
             throw std::runtime_error("Invalid format");
         }
         samplerate = sndfile->samplerate();
         channels = sndfile->channels();
-
-        fprintf(stderr, "Opened file '%s'\n", filename);
 
         fprintf(stderr, "    Sample rate : %d\n", samplerate);
         fprintf(stderr, "    Channels    : %d\n", channels);
@@ -175,7 +189,6 @@ public:
             throw std::runtime_error(
                         std::string("Invalid file format, PCM16 expected"));
         }
-        //    if (file.format() &
         //~ readThread = std::thread{&RtStreamPlayer::readInput, this};
 
         SDL_AudioSpec wanted, obtained;
@@ -184,12 +197,13 @@ public:
         wanted.freq = sndfile->samplerate();
         wanted.format = AUDIO_S16;
         wanted.channels = sndfile->channels();
-        wanted.samples = sndfile->samplerate()*sndfile->channels()/4;
+        wanted.samples = sndfile->samplerate()*sndfile->channels()/2/2;
         int wantedSamples = wanted.samples;
-        wanted.callback = fill_audio_adaptor;
+        wanted.callback = [](void *udata, Uint8 *stream, int len) {
+            static_cast<RtStreamPlayer *>(udata)->fill_audio(stream, len);
+        };
         wanted.userdata = this;
 
-        /* Open the audio device, forcing the desired format */
         if (SDL_OpenAudio(&wanted, &obtained) < 0)
             throw std::runtime_error(std::string("Couldn't open audio: ") +
                                      SDL_GetError());
@@ -214,20 +228,14 @@ public:
     }
 
     int run() {
-        //~ while (!mustExit) {
-        //~ SDL_Delay(500);
-        //~ }
         readInput();
-
-        SDL_CloseAudio();
     }
 
-    static void fill_audio_adaptor(void *udata, Uint8 *stream, int len) {
-        static_cast<RtStreamPlayer *>(udata)->fill_audio(stream, len);
-    }
-
-    void fill_audio(Uint8 *stream, int len) {
-
+    void fill_audio(Uint8 *stream, int len)
+    {
+        auto fillWithSilence = [stream, len] {
+            memset(stream, 0, len);
+        };
         AudioBuffer *buf = nullptr;
         {
             std::unique_lock<std::mutex> lock{mutex};
@@ -246,7 +254,7 @@ public:
             }
             if (state != Playing) {
                 //~ std::clog << "player: syncing"  << std::endl;
-                memset(stream, 0, len);
+                fillWithSilence();
                 if (startTime != backupStarted && time_span.count() > 5) {
                     raise(SIGUSR1);
                     backupStarted = startTime;
@@ -258,7 +266,7 @@ public:
                 std::clog << "buffer underrun" << std::endl;
                 startTime = steady_clock::now();
                 state = WaitingForInput;
-                memset(stream, 0, len);
+                fillWithSilence();
                 return;
             }
             buf = readyBuffers.front();
@@ -266,13 +274,14 @@ public:
         }
 
         if (buf->usedSamples == 0) {
-            logInfo("player found 0, must exit");
-            mustExit = true;
+            logInfo("player found 0");
+//            mustExit = true;
         }
 
         if (buf->usedSamples * 2 != len) {
             std::clog << "buffer size mismatch!" << buf->usedSamples * 2 << " vs "
                       << len << std::endl;
+            fillWithSilence();
         } else {
             memcpy(stream, buf->buffer, buf->usedSamples * 2);
         }
@@ -285,7 +294,9 @@ public:
     }
 
     ~RtStreamPlayer() {
+        logInfo("Closing");
         //~ readThread.join();
+        SDL_CloseAudio();
     }
     void pleaseFinish() {
         mustExit = true;
@@ -306,24 +317,17 @@ void signalHandler(int sig) {
         break;
     case SIGINT:
     case SIGTERM:
-
         instance->pleaseFinish();
         break;
     }
 }
 
 
-int main(int argc, char **argv) {
-
-    if (argc != 2) {
-        fprintf(stderr, "bad args. app <soundfile>\n");
-        exit(EXIT_FAILURE);
-    }
-
-    fputs("date\n", shellProcess);
-    fflush(shellProcess);
+int main(int argc, char **argv)
+{
     try {
-        instance.reset(new RtStreamPlayer(argv[1]));
+        runCommand("date");
+        instance.reset(new RtStreamPlayer);
         signal(SIGUSR1, signalHandler);
         signal(SIGUSR2, signalHandler);
         signal(SIGINT, signalHandler);
