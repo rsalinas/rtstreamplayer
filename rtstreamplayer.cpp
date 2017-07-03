@@ -43,9 +43,10 @@ class RtStreamPlayer {
     decltype(steady_clock::now()) appStartTime = steady_clock::now();
     float downTime = 0;
     decltype(steady_clock::now()) startTime = steady_clock::now(), backupStarted;
+    decltype(steady_clock::now()) underrunStartTime = steady_clock::now();
     const float SYNC_TIME = 1;
-    const float MIN_BUFFER_TIME = 1.5;
-    const float MARGIN_TIME = 1;
+    const float MIN_BUFFER_TIME = 3;
+    const float MARGIN_TIME = 2;
     const float BACKUP_WAIT = 5;
     size_t minBufferCount = 0;
     int samplerate = 0, channels = 0;
@@ -190,29 +191,32 @@ public:
         };
         AudioBuffer *buf = nullptr;
         auto now = steady_clock::now();
-        std::chrono::duration<double> time_span =
+        auto fillingBufferInterval =
                 duration_cast<duration<double>>(now - startTime);
+        auto uptime = duration_cast<duration<double>>(now - appStartTime).count();
         {
             std::unique_lock<std::mutex> lock{mutex};
             //~ std::clog << "fill buffer = " << readyBuffers.size() <<"  len=="<<
             // len<< std::endl;
 
-            if (state == Buffering && time_span.count() > SYNC_TIME &&
+            if (state == Buffering && fillingBufferInterval.count() > SYNC_TIME &&
                     readyBuffers.size() >= secondsToBuffers(MIN_BUFFER_TIME)) {
                 state = Playing;
                 if (backupRunning) {
                     raise(SIGUSR2);
                     backupRunning = false;
                 }
-                downTime += time_span.count();
-                auto totalTime = duration_cast<duration<double>>(now - appStartTime).count();
-                logInfo("player: Buffering -> Playing. ellapsed == " + std::to_string(time_span.count()));
-                logInfo("Downtime: " + std::to_string(downTime) +  " Total: " + std::to_string(totalTime));
+
+
+                auto audioDowntime = duration_cast<duration<double>>(now - underrunStartTime).count();
+                downTime += audioDowntime;
+                logInfo("player: Buffering -> Playing. ellapsed == " + std::to_string(fillingBufferInterval.count()));
+                logInfo("Downtime: " + std::to_string(downTime) +  " uptime: " + std::to_string(uptime));
             }
             if (state != Playing) {
                 //~ std::clog << "player: syncing"  << std::endl;
                 fillWithSilence();
-                if (startTime != backupStarted && time_span.count() > BACKUP_WAIT) {
+                if (startTime != backupStarted && fillingBufferInterval.count() > BACKUP_WAIT) {
                     raise(SIGUSR1);
                     backupRunning = true;
                     backupStarted = startTime;
@@ -223,6 +227,7 @@ public:
                 underrunCount++;
                 logInfo("Buffer underrun. Count == " + std::to_string(underrunCount));
                 startTime = now;
+                underrunStartTime = now;
                 state = WaitingForInput;
                 fillWithSilence();
                 return;
