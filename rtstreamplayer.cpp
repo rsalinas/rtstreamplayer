@@ -35,6 +35,7 @@ static std::unique_ptr<RtStreamPlayer> instance;
 
 class RtStreamPlayer {
     //const SDL_AudioSpec sdlAudioSpec;
+    SimpleCommandExecutor shellExecutor;
 
     std::unique_ptr<Popen> inputProcess;
     std::unique_ptr<SndfileHandle> sndfile;
@@ -203,7 +204,9 @@ public:
                     readyBuffers.size() >= secondsToBuffers(MIN_BUFFER_TIME)) {
                 state = Playing;
                 if (backupRunning) {
-                    raise(SIGUSR2);
+                    logInfo("Stopping backup source");
+                    shellExecutor.runCommand("./restored.sh");
+
                     backupRunning = false;
                 }
 
@@ -217,7 +220,9 @@ public:
                 //~ std::clog << "player: syncing"  << std::endl;
                 fillWithSilence();
                 if (startTime != backupStarted && fillingBufferInterval.count() > BACKUP_WAIT) {
-                    raise(SIGUSR1);
+                    logInfo("Starting backup source");
+                    shellExecutor.runCommand("./failed.sh");
+
                     backupRunning = true;
                     backupStarted = startTime;
                 }
@@ -282,12 +287,8 @@ void signalHandler(int sig) {
     std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
     switch (sig) {
     case SIGUSR1:
-        logInfo("Starting backup source");
-        runCommand("./failed.sh");
         break;
     case SIGUSR2:
-        logInfo("Stopping backup source");
-        runCommand("./restored.sh");
         break;
     case SIGINT:
     case SIGTERM:
