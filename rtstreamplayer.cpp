@@ -280,6 +280,16 @@ public:
     void pleaseFinish() {
         mustExit = true;
     }
+    void sigUsr(int sig) {
+        switch (sig) {
+        case SIGUSR1:
+            std::unique_lock<std::mutex> lock{mutex};
+            auto fbs = freeBuffers.size();
+            auto rbs = readyBuffers.size();
+            logInfo("Buffer state: " + std::to_string(rbs)+ " free: " + std::to_string(fbs)+ " total: " + std::to_string(fbs+rbs));
+            break;
+        }
+    }
 };
 
 
@@ -297,15 +307,42 @@ void signalHandler(int sig) {
     }
 }
 
+class SignalHandler {
+    const int sig;
+public:
+    SignalHandler(int sig, sighandler_t handler) : sig(sig) {
+        std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
+        signal(sig, handler);
+    }
+    ~SignalHandler() {
+        std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
+        signal(sig, SIG_DFL);
+
+    }
+};
 
 int main(int argc, char **argv)
 {
+
+    LOG_INFO() << "hola" << 5;
+    return 0;
     try {
         instance.reset(new RtStreamPlayer);
-        signal(SIGUSR1, signalHandler);
-        signal(SIGUSR2, signalHandler);
-        signal(SIGINT, signalHandler);
-        signal(SIGTERM, signalHandler);
+        auto sigUsrHandler =  [](int sig) {
+            std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
+            //instance->sigUSR1();
+        };
+
+        SignalHandler usr1Handler{SIGUSR1, sigUsrHandler};
+        SignalHandler usr2Handler{SIGUSR2, sigUsrHandler};
+
+        auto finishHandler = [](int sig) {
+            std::clog << __FUNCTION__ << " " << strsignal(sig) << std::endl;
+            instance->pleaseFinish();
+        };
+
+        SignalHandler intHandler{SIGINT, finishHandler};
+        SignalHandler termHandler{SIGTERM, finishHandler};
 
         instance->run();
     } catch (const std::exception &e) {
