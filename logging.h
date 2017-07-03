@@ -8,38 +8,49 @@ std::string nowStr( const char* format = "%F %T" )
     return cstr;
 }
 
-static void logInfo(const std::string &message) {
-    std::clog << nowStr() << ": " << message << std::endl;
-}
-static void logWarn(const std::string &message) {
-    std::clog << nowStr() << ": [WARN] " << message << std::endl;
+
+std::ostream & operator<<(std::ostream & os, const SDL_AudioSpec obtained) {
+    return os << obtained.freq << " " << int(obtained.channels) << " chan, " << obtained.samples << " samples" ;
 }
 
-static void logDebug(const std::string &message) {
-    std::clog << nowStr() << ": " << message << std::endl;
-}
+enum LogLevel {
+    ERROR, WARN, INFO, DEBUG
+};
 
-void print(const std::string & message, const SDL_AudioSpec obtained) {
-    std::clog << message << ": " << obtained.freq << " " << int(obtained.channels) << " chan, " << obtained.samples << " samples" << std::endl;
-}
-
-#define LOG_INFO() LoggerProxy{}
+#define LOG_INFO() LoggerProxy{LogLevel::INFO}
+#define LOG_WARN() LoggerProxy{LogLevel::WARN}
+#define LOG_DEBUG() LoggerProxy{LogLevel::DEBUG}
 
 class LoggerProxy  {
+    const LogLevel logLevel;
+    const std::string timestampText;
     std::ostringstream oss;
+
 public:
-    LoggerProxy() {
+    LoggerProxy(LogLevel level) : logLevel(level), timestampText(nowStr()) {
     }
+
     template<typename T>
     std::ostream &operator<<(const T & data) {
-        std::clog << "op<<" << std::endl;
         oss << data;
         return oss;
     }
 
+    static const char * toString(LogLevel logLevel) {
+        switch (logLevel) {
+        case  ERROR:
+            return "ERROR";
+        case WARN:
+            return "WARN";
+        case INFO:
+            return "INFO";
+        case DEBUG:
+        default:
+            return "DEBUG";
+        }
+    }
+
     ~LoggerProxy() {
-        std::clog << "Finished: " << oss.str() << std::endl;
-        oss.str("");
-        oss.clear();
+        std::clog << timestampText << (std::string{": ["}+toString(logLevel)+"] ") << oss.str() << std::endl;
     }
 };

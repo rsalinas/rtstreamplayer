@@ -15,6 +15,7 @@ public:
     }
 
     ~Popen() {
-        logInfo("closed source with exit value: " + std::to_string(pclose(f)));
+        auto retval = pclose(f);
+        LOG_INFO()  << "closed source with exit value: " << retval;
     }
 };
