@@ -158,9 +158,7 @@ public:
         if (SDL_OpenAudio(&wanted, &obtained) < 0)
             throw std::runtime_error(std::string("Couldn't open audio: ") +
                                      SDL_GetError());
-        LOG_INFO() << "Wanted: " << wantedSamples << " got " << wanted.samples;
-        LOG_INFO() << "wanted: " << wanted;
-        LOG_INFO() << "obtained: " << obtained;
+        LOG_INFO() << "Wanted: " << wanted << ", obtained: " << obtained;
         bufferSize = obtained.size;
         LOG_INFO()  << "Audio in a buffer: " << buffersToSeconds(1) ;
 
@@ -246,8 +244,7 @@ public:
         }
 
         if (buf->usedSamples * 2 != len) {
-            LOG_WARN() << "buffer size mismatch!";
-            LOG_INFO()  << buf->usedSamples * 2 << " vs "
+            LOG_WARN() << "buffer size mismatch: " <<  buf->usedSamples * 2 << " vs "
                         << len ;
             fillWithSilence();
         } else {
@@ -294,7 +291,7 @@ public:
 
 
 void signalHandler(int sig) {
-    LOG_INFO()  << __FUNCTION__ << " " << strsignal(sig) ;
+    LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
     switch (sig) {
     case SIGUSR1:
         break;
@@ -311,11 +308,11 @@ class SignalHandler {
     const int sig;
 public:
     SignalHandler(int sig, sighandler_t handler) : sig(sig) {
-        LOG_INFO()  << __FUNCTION__ << " " << strsignal(sig) ;
+        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
         signal(sig, handler);
     }
     ~SignalHandler() {
-        LOG_INFO()  << __FUNCTION__ << " " << strsignal(sig) ;
+        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
         signal(sig, SIG_DFL);
 
     }
@@ -336,7 +333,7 @@ int main(int argc, char **argv)
         SignalHandler usr2Handler{SIGUSR2, sigUsrHandler};
 
         auto finishHandler = [](int sig) {
-            LOG_INFO()  << __FUNCTION__ << " " << strsignal(sig) ;
+            LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
             instance->pleaseFinish();
         };
 
