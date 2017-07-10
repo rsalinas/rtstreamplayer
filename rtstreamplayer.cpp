@@ -19,6 +19,8 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <alsa/error.h>
+
 #include "buffer.h"
 #include "logging.h"
 #include "popen.h"
@@ -318,6 +320,10 @@ public:
     }
 };
 
+void snd_lib_error_handler(const char *file, int line, const char *function, int err, const char *fmt, ...) {
+
+}
+
 int main(int argc, char **argv)
 {
 
@@ -328,6 +334,9 @@ int main(int argc, char **argv)
             LOG_INFO()  << __FUNCTION__ << " " << strsignal(sig) ;
             //instance->sigUSR1();
         };
+
+        snd_lib_error_set_handler(snd_lib_error_handler);
+
 
         SignalHandler usr1Handler{SIGUSR1, sigUsrHandler};
         SignalHandler usr2Handler{SIGUSR2, sigUsrHandler};

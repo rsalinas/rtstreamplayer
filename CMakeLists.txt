@@ -3,6 +3,7 @@ project (rtstreamplayer)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
 find_package(SDL_sound REQUIRED)
 find_package(SDL REQUIRED)
+find_package(ALSA)
 #find_package(Qt5 CONFIG REQUIRED COMPONENTS
 #    Core
 #)
@@ -16,4 +17,5 @@ target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${SNDFILE_INCLUDE_DIRS}
 target_link_libraries(${PROJECT_NAME} ${SNDFILE_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} ${SDL_SOUND_LIBRARY})
 target_link_libraries(${PROJECT_NAME} ${SDL_LIBRARY})
+target_link_libraries(${PROJECT_NAME} ${ALSA_LIBRARIES})
 #target_link_libraries(${PROJECT_NAME}   Qt5::Core)
