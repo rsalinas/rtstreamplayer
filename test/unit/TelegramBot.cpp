@@ -8,4 +8,6 @@ using namespace std;
 
 TEST(TelegramBot, Main) {
     clog << "Bot" << endl;
+    TelegramBot bot;
+
 }

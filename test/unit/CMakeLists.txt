@@ -14,12 +14,12 @@ function(add_gmock_test target)
     add_test(${target} ${target})
 endfunction()
 
-include_directories(../..)
+include_directories(../../src)
 add_executable(main
     TelegramBot.cpp
     main.cpp
     /usr/src/gtest/src/gtest_main.cc)
-target_link_libraries(main gtest)
+target_link_libraries(main gtest rtstreamplayer)
 
 add_test(NAME Main COMMAND main)
 
