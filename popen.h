@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdio>
+#include "logging.h"
+
+
 class Popen
 {
     FILE * f = nullptr;
