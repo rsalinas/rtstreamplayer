@@ -1,5 +1,3 @@
-
-
 /*
  * Real Time Stream Player
  *
@@ -7,17 +5,47 @@
  */
 
 #include "rtstreamplayer.h"
+#include <functional>
+#include <map>
+#include <iostream>
+#include <sstream>
 
-RtStreamPlayer::RtStreamPlayer() : inputProcess(openProcess()), sndfile(new SndfileHandle(inputProcess->getFd(), false)) {
+using namespace std;
+
+
+
+std::string RtStreamPlayer::currentStatus() {
+    stringstream ss;
+    ss << "Sample rate : " << samplerate ;
+    ss << " Channels    : "  <<  channels;
+    ss << " Format: " <<  sndfile->format();
+
+    return ss.str();
+}
+
+RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props) {
+    //    botThread = std::thread{[this]() {
+    //      mqttServer.run();
+    //    }};
+
+    mqttServerThread_ = std::thread{[this] () {
+        mqttServer.start(*this);
+    }};
+    mqttServer.setServerStatus("Initializing");
+
+    startBackupSource();
+    inputProcess = openProcess();
+    sndfile.reset(new SndfileHandle(inputProcess->getFd(), false));
     if (!sndfile->samplerate()) {
         throw std::runtime_error("Invalid format");
     }
     samplerate = sndfile->samplerate();
     channels = sndfile->channels();
 
-    LOG_INFO()  << "    Sample rate : %d" << samplerate;
-    LOG_INFO()  <<  "    Channels    : %d" <<  channels;
-    LOG_INFO()  <<  "    Format:       %0x" <<  sndfile->format();
+    LOG_INFO()  << "    Sample rate : " << samplerate;
+    LOG_INFO()  <<  "    Channels    : " <<  channels;
+    LOG_INFO()  <<  "    Format:       " <<  sndfile->format();
+
     if (!sndfile->format() & SF_FORMAT_PCM_16) {
         throw std::runtime_error(
                     std::string("Invalid file format, PCM16 expected"));
@@ -127,13 +155,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
         if (state == Buffering && fillingBufferInterval.count() > SYNC_TIME &&
                 readyBuffers.size() >= secondsToBuffers(MIN_BUFFER_TIME)) {
             state = Playing;
-            if (backupRunning) {
-                LOG_INFO() << "Stopping backup source";
-                shellExecutor.runCommand("./restored.sh");
-
-                backupRunning = false;
-            }
-
+            stopBackupSource();
 
             auto audioDowntime = duration_cast<duration<double>>(now - underrunStartTime).count();
             downTime += audioDowntime;
@@ -144,10 +166,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
             //~ LOG_INFO()  << "player: syncing"  ;
             fillWithSilence();
             if (startTime != backupStarted && fillingBufferInterval.count() > BACKUP_WAIT) {
-                LOG_INFO() << "Starting backup source";
-                shellExecutor.runCommand("./failed.sh");
-
-                backupRunning = true;
+                startBackupSource();
                 backupStarted = startTime;
             }
             return;
@@ -171,7 +190,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
 
     if (buf->usedSamples * 2 != len) {
         LOG_WARN() << "buffer size mismatch: " <<  buf->usedSamples * 2 << " vs "
-                    << len ;
+                   << len ;
         fillWithSilence();
     } else {
         lastWasSilence = false;
@@ -201,7 +220,10 @@ int RtStreamPlayer::run() {
 
 
 RtStreamPlayer::~RtStreamPlayer() {
-    LOG_INFO() << "Closing";
+    LOG_INFO() << __FUNCTION__ << ": Closing";
+
+    mqttServer.setServerStatus("Closing");
+    mqttServer.pleaseFinish();
     //~ readThread.join();
     SDL_CloseAudio();
     for (auto buffer : readyBuffers) {
@@ -210,7 +232,80 @@ RtStreamPlayer::~RtStreamPlayer() {
     for (auto buffer : freeBuffers) {
         delete buffer;
     }
+    //    mqttServer.setServerStatus("Disconnected");
+    LOG_INFO() << __FUNCTION__ << " finished";
+    //    mqttServer.pleaseFinish();
+    //    pthread_kill( botThread.native_handle(), SIGTERM);
+    //    botThread.join();
+
+    mqttServerThread_.join();
 }
 
 
+bool RtStreamPlayer::startBackupSource() {
+    if (!backupRunning) {
+        LOG_INFO() << "Starting backup source";
+        mqttServer.setServerStatus("Backup");
+        shellExecutor.runCommand("./failed.sh");
+        backupRunning = true;
+    }
+}
 
+bool RtStreamPlayer::stopBackupSource() {
+    if (backupRunning) {
+        LOG_INFO() << "Stopping backup source";
+        shellExecutor.runCommand("./restored.sh");
+        backupRunning = false;
+        mqttServer.setServerStatus("Streaming");
+    }
+
+}
+
+std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::string& cmdline) {
+    LOG_INFO() << __FUNCTION__ << " Actual command ..."  << cmdline << " for " << clientId;
+    auto ss = splitString(cmdline, ' ');
+    if (ss.size() < 1) {
+        return "ERROR";
+    }
+    static std::map<std::string, std::function<std::string(std::string)>> funcs{
+    {"cpuinfo", [this](std::string)  {
+        std::ifstream t("/proc/cpuinfo");
+        std::string str((std::istreambuf_iterator<char>(t)),
+                        std::istreambuf_iterator<char>());
+        return str;
+    }},
+{"temp", [this](std::string)  {
+    std::ifstream t("/sys/class/thermal/thermal_zone0/temp");
+    std::string str((std::istreambuf_iterator<char>(t)),
+                    std::istreambuf_iterator<char>());
+    return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
+
+}},
+{"quit", [this](std::string)  {
+    LOG_INFO() << __FUNCTION__ << " Actual quit...";
+    pleaseFinish();
+    return "Quitting!";
+}},
+{"status", [this](std::string)  {
+    return currentStatus();
+}},
+{"uptime", [this](std::string)  {
+    std::ifstream t("/proc/uptime");
+    std::string str((std::istreambuf_iterator<char>(t)),
+                    std::istreambuf_iterator<char>());
+    return str;
+}},
+{"mute", [this](std::string)  {
+    return "Muted. Resume with /unmute";
+}},
+{"unmute", [this](std::string)  {
+    return "Unmuted. Mute with /mute";
+}},
+
+};
+auto kv = funcs.find(ss[0]);
+if (kv != funcs.end()) {
+    return  kv->second(cmdline);
+}
+return "Missing";
+}

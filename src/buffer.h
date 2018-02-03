@@ -1,3 +1,7 @@
+#pragma once
+
+#include <cmath>
+
 class AudioBuffer {
 public:
     AudioBuffer(size_t length) : buffer(new Uint8[length]), length(length)

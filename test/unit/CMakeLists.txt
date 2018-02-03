@@ -18,6 +18,7 @@ include_directories(../../src)
 add_executable(main
     TelegramBot.cpp
     main.cpp
+    Properties.cpp
     /usr/src/gtest/src/gtest_main.cc)
 target_link_libraries(main gtest rtstreamplayer)
 

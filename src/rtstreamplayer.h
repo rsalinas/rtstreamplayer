@@ -4,32 +4,27 @@
 #include <memory>
 #include "logging.h"
 #include "process.h"
-#include <chrono>
-#include <cmath>
+
 #include <condition_variable>
-#include <csignal>
 #include <deque>
-#include <iostream>
 #include <list>
 
 #include <mutex>
 #include <SDL/SDL_audio.h>
 #include <SDL/SDL.h>
 #include <sndfile.hh>
-#include <stdexcept>
-#include <unistd.h>
 #include "rtstreamplayer.h"
-
+#include "MqttServer.h"
 #include "buffer.h"
-
+#include "TelegramBot.h"
+#include <thread>
+#include "Properties.h"
 
 using std::chrono::steady_clock;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 
-
-
-class RtStreamPlayer {
+class RtStreamPlayer : public MqttServer::Listener {
     //const SDL_AudioSpec sdlAudioSpec;
     SimpleCommandExecutor shellExecutor;
 
@@ -40,7 +35,7 @@ class RtStreamPlayer {
     decltype(steady_clock::now()) appStartTime = steady_clock::now();
     float downTime = 0;
     decltype(steady_clock::now()) startTime = steady_clock::now(), backupStarted;
-    decltype(steady_clock::now()) underrunStartTime = steady_clock::now();
+    steady_clock::time_point underrunStartTime = steady_clock::now();
     const float SYNC_TIME = 1;
     const float MIN_BUFFER_TIME = 3;
     const float MARGIN_TIME = 2;
@@ -55,7 +50,7 @@ class RtStreamPlayer {
     std::list<AudioBuffer *> freeBuffers;
     bool mustExit = false;
     size_t bufferSize;
-    bool backupRunning = true;
+    bool backupRunning = false;
 
     size_t secondsToBuffers(float seconds)
     {
@@ -72,9 +67,10 @@ class RtStreamPlayer {
     void readInput();
 
     std::unique_ptr<Popen> openProcess();
+    std::string  runCommand(const std::string& clientId, const std::string& cmdline);
 
 public:
-    RtStreamPlayer();
+    RtStreamPlayer(const Properties& props);
     int run();
 
     void fill_audio(Uint8 *stream, int len);
@@ -93,4 +89,13 @@ public:
             break;
         }
     }
+
+private:
+    const Properties& props_;
+    bool startBackupSource();
+    bool stopBackupSource();
+    std::string currentStatus();
+    std::string status_;
+    MqttServer mqttServer;
+    std::thread mqttServerThread_;
 };

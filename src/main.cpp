@@ -1,6 +1,8 @@
 #include "logging.h"
 
 #include "rtstreamplayer.h"
+#include <thread>
+#include "Properties.h"
 
 static std::unique_ptr<RtStreamPlayer> instance;
 
@@ -36,10 +38,15 @@ public:
 
 int main(int argc, char **argv)
 {
+    Properties props{"config.props"};
+//    std::thread th{[]() {
+
+//                   }};
+//    th.join();
 
     LOG_INFO() << "rtsp";
     try {
-        instance.reset(new RtStreamPlayer);
+        instance.reset(new RtStreamPlayer{props});
         auto sigUsrHandler =  [](int sig) {
             LOG_INFO()  << __FUNCTION__ << " " << strsignal(sig) ;
             //instance->sigUSR1();
