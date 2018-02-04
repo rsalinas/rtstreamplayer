@@ -12,8 +12,6 @@
 
 using namespace std;
 
-
-
 std::string RtStreamPlayer::currentStatus() {
     stringstream ss;
     ss << "Sample rate : " << samplerate ;
@@ -23,15 +21,20 @@ std::string RtStreamPlayer::currentStatus() {
     return ss.str();
 }
 
-RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props) {
-    //    botThread = std::thread{[this]() {
-    //      mqttServer.run();
-    //    }};
+static std::map<std::string, MqttServer::CommandMeta> adapt(const std::map<std::string, RtStreamPlayer::CommandSpec>& cmds) {
+    std::map<std::string, MqttServer::CommandMeta> ret;
+    for (const auto& kv: cmds) {
+        ret[kv.first] = kv.second.meta;
+    }
+    return ret;
+}
 
+RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props) {
     mqttServerThread_ = std::thread{[this] () {
         mqttServer.start(*this);
     }};
     mqttServer.setServerStatus("Initializing");
+    mqttServer.setCommandList(adapt(commands_));
 
     startBackupSource();
     inputProcess = openProcess();
@@ -261,51 +264,50 @@ bool RtStreamPlayer::stopBackupSource() {
 
 }
 
+const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::commands_ = {
+{"cpuinfo", CommandSpec{MqttServer::CommandMeta{false,"Get CPU info"},  [](std::string, RtStreamPlayer* self)  {
+    std::ifstream t("/proc/cpuinfo");
+    std::string str((std::istreambuf_iterator<char>(t)),
+                    std::istreambuf_iterator<char>());
+    return str;
+} }},
+{"quit", CommandSpec{MqttServer::CommandMeta{true, "Stop rtsp server"}, [](std::string, RtStreamPlayer* self)  {
+    self->pleaseFinish();
+    return "Quitting!";
+}}},
+{"temp", CommandSpec{MqttServer::CommandMeta{false, "Get CPU temperature"}, [](std::string, RtStreamPlayer* self)  {
+    std::ifstream t("/sys/class/thermal/thermal_zone0/temp");
+    std::string str((std::istreambuf_iterator<char>(t)),
+                    std::istreambuf_iterator<char>());
+    return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
+
+}}},
+//{"status", CommandSpec{false, [](std::string, RtStreamPlayer* self)  {
+//    return self->currentStatus();
+//}, "Get current state"}},
+//{"uptime", CommandSpec{false, [](std::string, RtStreamPlayer* self)  {
+//    std::ifstream t("/proc/uptime");
+//    std::string str((std::istreambuf_iterator<char>(t)),
+//                    std::istreambuf_iterator<char>());
+//    return str;
+//}, "Get uptime of host and services"}},
+//{"mute", CommandSpec{true, [](std::string, RtStreamPlayer* self)  {
+//    return "Muted. Resume with /unmute";
+//}, "Mute output. Flow is not interrupted"}},
+//{"unmute", CommandSpec{true, [](std::string, RtStreamPlayer* self)  {
+//    return "Unmuted. Mute with /mute";
+//}, "Unmute output, normal operation."}},
+};
+
 std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::string& cmdline) {
     LOG_INFO() << __FUNCTION__ << " Actual command ..."  << cmdline << " for " << clientId;
     auto ss = splitString(cmdline, ' ');
     if (ss.size() < 1) {
         return "ERROR";
     }
-    static std::map<std::string, std::function<std::string(std::string)>> funcs{
-    {"cpuinfo", [this](std::string)  {
-        std::ifstream t("/proc/cpuinfo");
-        std::string str((std::istreambuf_iterator<char>(t)),
-                        std::istreambuf_iterator<char>());
-        return str;
-    }},
-{"temp", [this](std::string)  {
-    std::ifstream t("/sys/class/thermal/thermal_zone0/temp");
-    std::string str((std::istreambuf_iterator<char>(t)),
-                    std::istreambuf_iterator<char>());
-    return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
-
-}},
-{"quit", [this](std::string)  {
-    LOG_INFO() << __FUNCTION__ << " Actual quit...";
-    pleaseFinish();
-    return "Quitting!";
-}},
-{"status", [this](std::string)  {
-    return currentStatus();
-}},
-{"uptime", [this](std::string)  {
-    std::ifstream t("/proc/uptime");
-    std::string str((std::istreambuf_iterator<char>(t)),
-                    std::istreambuf_iterator<char>());
-    return str;
-}},
-{"mute", [this](std::string)  {
-    return "Muted. Resume with /unmute";
-}},
-{"unmute", [this](std::string)  {
-    return "Unmuted. Mute with /mute";
-}},
-
-};
-auto kv = funcs.find(ss[0]);
-if (kv != funcs.end()) {
-    return  kv->second(cmdline);
-}
-return "Missing";
+    auto kv = commands_.find(ss[0]);
+    if (kv != commands_.end()) {
+        return  kv->second.func(cmdline, this);
+    }
+    return "Missing";
 }

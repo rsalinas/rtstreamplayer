@@ -1,7 +1,7 @@
 #include "MqttServer.h"
 
 #include <iostream>
-
+#include <map>
 using namespace std;
 
 
@@ -27,19 +27,27 @@ void MqttServer::setServerStatus(const std::string& str) {
     mosquitto_.sendMessage("rtsp/state", str);
 }
 
+void MqttServer::setCommandList(const std::map<std::string, CommandMeta>& cmds) {
+    std::string keys;
+    for (const auto& kv : cmds) {
+        if (keys.size())
+            keys.append(",");
+        keys.append(kv.first);
+        mosquitto_.sendMessage("rtsp/command/desc/" + kv.first, kv.second.desc, true);
+    }
+    mosquitto_.sendMessage("rtsp/commands", keys, true);
+
+}
+
 void MqttServer::onMessage(const std::string& topic, const std::string& value) {
     clog << __FUNCTION__  << " " << topic << " : " << value << endl;
     auto ss = splitString(topic, '/');
-    //    for (size_t i = 0; i < ss.size(); ++i) {
-    //        clog << "chunk: " << ss[i] << endl;
-    //    }
-    //    clog << endl;
     if (ss.size() != 3) {
+        clog << "Ignoring bad message: " << value << " to " << topic << endl;
         return;
     }
     if (ss[0] == "rtsp" && ss[1] == "cmd") {
         auto topic = std::string{"rtsp/response/"} + ss[2];
-        clog << "Answering to " << ss[2] << endl;
         auto result = listener_->runCommand(ss[2], value);
         mosquitto_.sendMessage(topic, result);
     }

@@ -25,6 +25,31 @@ using std::chrono::duration;
 using std::chrono::duration_cast;
 
 class RtStreamPlayer : public MqttServer::Listener {
+public:
+    RtStreamPlayer(const Properties& props);
+    int run();
+    ~RtStreamPlayer();
+
+    void pleaseFinish() {
+        mustExit = true;
+    }
+    void sigUsr(int sig) {
+        switch (sig) {
+        case SIGUSR1:
+            std::unique_lock<std::mutex> lock{mutex};
+            auto fbs = freeBuffers.size();
+            auto rbs = readyBuffers.size();
+            LOG_INFO() << "Buffer state: " << rbs << " free: " << fbs << " total: " << (fbs+rbs);
+            break;
+        }
+    }
+    struct CommandSpec {
+        MqttServer::CommandMeta meta;
+        std::function<std::string(std::string, RtStreamPlayer*)> func;
+    };
+
+private:
+    void fill_audio(Uint8 *stream, int len);
     //const SDL_AudioSpec sdlAudioSpec;
     SimpleCommandExecutor shellExecutor;
 
@@ -32,9 +57,9 @@ class RtStreamPlayer : public MqttServer::Listener {
     std::unique_ptr<SndfileHandle> sndfile;
     enum State { WaitingForInput, Buffering, Playing };
     State state = WaitingForInput;
-    decltype(steady_clock::now()) appStartTime = steady_clock::now();
+    steady_clock::time_point appStartTime = steady_clock::now();
     float downTime = 0;
-    decltype(steady_clock::now()) startTime = steady_clock::now(), backupStarted;
+    steady_clock::time_point startTime = steady_clock::now(), backupStarted;
     steady_clock::time_point underrunStartTime = steady_clock::now();
     const float SYNC_TIME = 1;
     const float MIN_BUFFER_TIME = 3;
@@ -69,28 +94,6 @@ class RtStreamPlayer : public MqttServer::Listener {
     std::unique_ptr<Popen> openProcess();
     std::string  runCommand(const std::string& clientId, const std::string& cmdline);
 
-public:
-    RtStreamPlayer(const Properties& props);
-    int run();
-
-    void fill_audio(Uint8 *stream, int len);
-
-    ~RtStreamPlayer();
-    void pleaseFinish() {
-        mustExit = true;
-    }
-    void sigUsr(int sig) {
-        switch (sig) {
-        case SIGUSR1:
-            std::unique_lock<std::mutex> lock{mutex};
-            auto fbs = freeBuffers.size();
-            auto rbs = readyBuffers.size();
-            LOG_INFO() << "Buffer state: " << rbs << " free: " << fbs << " total: " << (fbs+rbs);
-            break;
-        }
-    }
-
-private:
     const Properties& props_;
     bool startBackupSource();
     bool stopBackupSource();
@@ -98,4 +101,6 @@ private:
     std::string status_;
     MqttServer mqttServer;
     std::thread mqttServerThread_;
+
+    static const std::map<std::string, CommandSpec> commands_;
 };

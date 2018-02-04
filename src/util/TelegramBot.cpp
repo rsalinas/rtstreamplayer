@@ -1,8 +1,6 @@
 #include "TelegramBot.h"
-#include <stdio.h>
-#include <iostream>
 
-#include <signal.h>
+#include <iostream>
 
 using namespace std;
 
@@ -10,41 +8,16 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     : props_(props), listener_(listener)
     , bot(props_.getString("tgbot.token", "")) {
     bot.getEvents().onCommand("start", [this](TgBot::Message::Ptr message) {
-        bot.getApi().sendMessage(message->chat->id, "Hi!");
+        bot.getApi().sendMessage(message->chat->id, "Welcome!");
+        bot.getApi().sendMessage(message->chat->id, getHelp());
     });
     bot.getEvents().onUnknownCommand([this](TgBot::Message::Ptr message) {
-        bot.getApi().sendMessage(message->chat->id, "Bad command");
+        bot.getApi().sendMessage(message->chat->id, "Bad command: " + message->text);
     });
 
     bot.getEvents().onCommand("help", [this](TgBot::Message::Ptr message) {
-
-
-        bot.getApi().sendMessage(message->chat->id, "Help:\n/get param\n/set param value");
+        bot.getApi().sendMessage(message->chat->id, getHelp());
     });
-    bot.getEvents().onCommand("quit", [this](TgBot::Message::Ptr message) {
-        listener_.cmdQuit(message->chat->id);
-    });
-
-
-    bot.getEvents().onCommand("cpuinfo", [this](TgBot::Message::Ptr message) {
-        listener_.runCommand(message->chat->id, "cpuinfo");
-    });
-    bot.getEvents().onCommand("temp", [this](TgBot::Message::Ptr message) {
-        listener_.runCommand(message->chat->id, "temp");
-    });
-    bot.getEvents().onCommand("status", [this](TgBot::Message::Ptr message) {
-        listener_.runCommand(message->chat->id, "status");
-    });
-    bot.getEvents().onCommand("uptime", [this](TgBot::Message::Ptr message) {
-        listener_.runCommand(message->chat->id, "uptime");
-    });
-    bot.getEvents().onCommand("mute", [this](TgBot::Message::Ptr message) {
-        listener_.runCommand(message->chat->id, "mute");
-    });
-    bot.getEvents().onCommand("unmute", [this](TgBot::Message::Ptr message) {
-        listener_.runCommand(message->chat->id, "unmute");
-    });
-
     bot.getEvents().onCommand("set", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, "set param value", false, message->messageId);
     });
@@ -61,16 +34,21 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     });
     try {
         printf("Bot username: %s\n", bot.getApi().getMe()->username.c_str());
-        //        bot.getApi().sendMessage(7654160, "RtStreamPlayer up");
+        //        bot.getApi().sendMessage(7654160, "Server up");
     } catch (TgBot::TgException& e) {
         printf("error: %s\n", e.what());
     }
 
 }
-TelegramBot::~TelegramBot() {
-    clog << __FUNCTION__ << endl;
-    //    bot.getApi().sendMessage(7654160, "RtStreamPlayer shutting down");
 
+void TelegramBot::setCommands(const std::vector<std::string>& cmds) {
+    commandNames_ = cmds;
+    for (const auto& cmd : cmds) {
+        clog << "Registering command " << cmd << endl;
+        bot.getEvents().onCommand(cmd, [this, cmd](TgBot::Message::Ptr message) {
+            listener_.runCommand(message->chat->id, cmd);
+        });
+    }
 }
 
 void TelegramBot::run() {
@@ -82,13 +60,9 @@ void TelegramBot::run() {
 
 }
 
-
 void TelegramBot::setServerStatus(const std::string& str) {
-    clog << "sending message: " << str << endl;
     try {
         sendMessageToSubscribed("State changed: " + str);
-        //    } catch (const std::exception& e) {
-        //        clog << "Exception sending to Telegram: " << e.what() << endl;
     } catch (...) {
         clog << "Exception sending to Telegram"<< endl;
     }
@@ -106,5 +80,13 @@ bool TelegramBot::sendMessageToUser(const std::string& user, const std::string& 
     auto id = strtoll(user.c_str(), NULL, 10);
     clog << __FUNCTION__ << " tg id: " << id << " MSG: " << message << endl;
     auto m =  bot.getApi().sendMessage(id, message);
-
 }
+
+std::string TelegramBot::getHelp() {
+    std::string help{"bot Help:\n"};
+    for (const auto& cmd : commandNames_) {
+        help.append("/").append(cmd).append("\n");
+    }
+    return help;
+}
+

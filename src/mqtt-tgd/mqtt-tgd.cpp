@@ -1,5 +1,5 @@
 #include "MqttClient.h"
-#include "../TelegramBot.h"
+#include "TelegramBot.h"
 
 #include <iostream>
 #include <thread>
@@ -12,9 +12,6 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
     MqttClient mc;
     TelegramBot bot;
 
-    void cmdQuit(int64_t clientId) override {
-        mc.cmdQuit(clientId);
-    }
     void runCommand(int64_t clientId, const std::string& cmdline) override {
         mc.runCommand(clientId, cmdline);
     }
@@ -25,6 +22,15 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
     void statusChanged(const std::string& value) override {
         clog << "Status changed!" << value << endl;
         bot.sendMessageToSubscribed("Status: " + value);
+    }
+
+    void setCommands(const std::vector<std::string>& cmds) {
+        clog << "Commands: " << endl;
+        for (const auto cmd : cmds) {
+            clog << "  " << cmd << endl;
+        }
+        bot.setCommands(cmds);
+        clog << endl;
     }
 
     Main()

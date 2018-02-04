@@ -8,4 +8,4 @@ add_library(MqttClient
 )
 
 add_executable(${PROJECT_NAME} mqtt-tgd.cpp )
-target_link_libraries(${PROJECT_NAME} rtstreamplayer MqttClient Mosquitto)
+target_link_libraries(${PROJECT_NAME} rtstreamplayer MqttClient Mosquitto malvautil)

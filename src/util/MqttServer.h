@@ -2,6 +2,7 @@
 
 #include <string>
 #include "Mosquitto.h"
+#include <map>
 
 class MqttServer : public Mosquitto::Listener {
 public:
@@ -9,6 +10,11 @@ public:
     public:
         virtual std::string runCommand(const std::string& clientId, const std::string& cmdline) = 0;
     };
+    struct CommandMeta {
+        bool privileged;
+        std::string desc;
+    };
+
 
     MqttServer();
     ~MqttServer();
@@ -20,6 +26,7 @@ public:
 
     void parameterChanged(const std::string& param, const std::string& value);
     void setServerStatus(const std::string& str);
+    void setCommandList(const std::map<std::string, CommandMeta>& list);
     void onMessage(const std::string& topic, const std::string& value) override;
 
 private:

@@ -60,7 +60,7 @@ bool Mosquitto::run(int timeoutMs) {
     }
     while (run_ == nullptr || *run_) {
         int rc = mosquitto_loop(mosq, timeoutMs);
-        clog << "loop..." << rc << endl;
+//        clog << "loop..." << rc << endl;
 
         if((run_==nullptr || *run_) && rc != MOSQ_ERR_SUCCESS){
             const char* errstr = strerror(errno);

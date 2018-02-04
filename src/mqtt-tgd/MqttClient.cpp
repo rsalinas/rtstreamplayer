@@ -11,7 +11,8 @@ MqttClient::MqttClient(Listener& listener)
     mosquitto_.setListener(*this);
     mosquitto_.subscribe("rtsp/response/#");
     mosquitto_.subscribe("rtsp/state");
-}
+    mosquitto_.subscribe("rtsp/commands");
+ }
 
 MqttClient::~MqttClient() {
     running_= false;
@@ -21,11 +22,6 @@ void MqttClient::run() {
     while (running_) {
         mosquitto_.run(1000);
     }
-}
-
-void MqttClient::cmdQuit(int64_t clientId) {
-    clog << __FUNCTION__ << clientId << endl;
-    mosquitto_.sendMessage((std::string{"rtsp/cmd/"}+to_string(clientId)).c_str(), "quit");
 }
 
 void MqttClient::runCommand(int64_t clientId, const std::string& cmdline) {
@@ -38,6 +34,9 @@ void MqttClient::onMessage(const std::string& topic, const std::string& value) {
     if (topic == "rtsp/state") {
         listener_.statusChanged(value);
         return;
+    }
+    if (topic == "rtsp/commands") {
+        listener_.setCommands(splitString(value, ','));
     }
     auto ss = splitString(topic, '/');
     if (startsWith(topic, "rtsp/response/") && ss.size() == 3) {
