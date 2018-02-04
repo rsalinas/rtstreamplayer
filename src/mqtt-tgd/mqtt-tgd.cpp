@@ -4,18 +4,17 @@
 #include <iostream>
 #include <thread>
 
-
 using namespace std;
 
 struct Main : public MqttClient::Listener, TelegramBot::Listener {
-    Properties props_;
+    const Properties props_;
     MqttClient mc;
     TelegramBot bot;
 
     void runCommand(int64_t clientId, const std::string& cmdline) override {
         mc.runCommand(clientId, cmdline);
     }
-    void messageForUser(const std::string& user, const std::string& message) {
+    void messageForUser(const std::string& user, const std::string& message) override {
         bot.sendMessageToUser(user, message);
     }
 
@@ -24,7 +23,7 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
         bot.sendMessageToSubscribed("Status: " + value);
     }
 
-    void setCommands(const std::vector<std::string>& cmds) {
+    void setCommands(const std::vector<std::string>& cmds) override {
         clog << "Commands: " << endl;
         for (const auto cmd : cmds) {
             clog << "  " << cmd << endl;
@@ -35,7 +34,7 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
 
     Main()
         : props_("config.props")
-        , mc(*this)
+        , mc("rtsp", *this)
         , bot(props_,*this) {
         mqttThread_ = std::thread{[this]() {
             mc.run();
@@ -51,13 +50,14 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
 
     int run() {
         bot.run();
-        return 0;
+        return EXIT_SUCCESS;
     }
+
+private:
     std::thread mqttThread_;
     std::thread botThread_;
 };
 
 int main() {
-
     return Main{}.run();
 }

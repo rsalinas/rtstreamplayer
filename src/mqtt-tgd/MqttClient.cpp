@@ -5,8 +5,9 @@
 
 using namespace std;
 
-MqttClient::MqttClient(Listener& listener)
-    : listener_(listener)
+MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
+    : serverPrefix_(serverPrefix)
+    , listener_(listener)
     , mosquitto_(__FUNCTION__, "localhost", 1883, &running_) {
     mosquitto_.setListener(*this);
     mosquitto_.subscribe("rtsp/response/#");

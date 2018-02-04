@@ -29,7 +29,7 @@ static std::map<std::string, MqttServer::CommandMeta> adapt(const std::map<std::
     return ret;
 }
 
-RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props) {
+RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttServer("rtsp") {
     mqttServerThread_ = std::thread{[this] () {
         mqttServer.start(*this);
     }};
@@ -282,21 +282,21 @@ const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::command
     return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
 
 }}},
-//{"status", CommandSpec{false, [](std::string, RtStreamPlayer* self)  {
-//    return self->currentStatus();
-//}, "Get current state"}},
-//{"uptime", CommandSpec{false, [](std::string, RtStreamPlayer* self)  {
-//    std::ifstream t("/proc/uptime");
-//    std::string str((std::istreambuf_iterator<char>(t)),
-//                    std::istreambuf_iterator<char>());
-//    return str;
-//}, "Get uptime of host and services"}},
-//{"mute", CommandSpec{true, [](std::string, RtStreamPlayer* self)  {
-//    return "Muted. Resume with /unmute";
-//}, "Mute output. Flow is not interrupted"}},
-//{"unmute", CommandSpec{true, [](std::string, RtStreamPlayer* self)  {
-//    return "Unmuted. Mute with /mute";
-//}, "Unmute output, normal operation."}},
+{"status", CommandSpec{MqttServer::CommandMeta{false, "Get current state"}, [](std::string, RtStreamPlayer* self)  {
+    return self->currentStatus();
+}}},
+{"uptime", CommandSpec{MqttServer::CommandMeta{false, "Get uptime of host and services"}, [](std::string, RtStreamPlayer* self)  {
+    std::ifstream t("/proc/uptime");
+    std::string str((std::istreambuf_iterator<char>(t)),
+                    std::istreambuf_iterator<char>());
+    return str;
+}}},
+{"mute", CommandSpec{MqttServer::CommandMeta{true, "Mute output. Flow is not interrupted"}, [](std::string, RtStreamPlayer* self)  {
+    return "Muted. Resume with /unmute";
+}}},
+{"unmute", CommandSpec{MqttServer::CommandMeta{true, "Unmute output, normal operation."}, [](std::string, RtStreamPlayer* self)  {
+    return "Unmuted. Mute with /mute";
+}}},
 };
 
 std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::string& cmdline) {

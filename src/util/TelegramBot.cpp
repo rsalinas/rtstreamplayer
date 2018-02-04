@@ -69,7 +69,7 @@ void TelegramBot::setServerStatus(const std::string& str) {
 }
 
 bool TelegramBot::sendMessageToSubscribed(const std::string& msg) {
-    for (auto id :  { 7654160L }) {
+    for (auto id :  { 7654160L }) { //FIXME
         auto m =  bot.getApi().sendMessage(id, msg);
     }
     return true;

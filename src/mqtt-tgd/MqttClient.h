@@ -16,13 +16,15 @@ public:
 
     void onMessage(const std::string& topic, const std::string& value) override;
 
-    MqttClient(Listener& listener);
+    MqttClient(const std::string& serverPrefix, Listener& listener);
     ~MqttClient();
 
     void run();
     void cmdQuit(int64_t clientId);
     void runCommand(int64_t clientId, const std::string& cmdline);
 
+private:
+    const std::string serverPrefix_;
     Listener& listener_;
     Mosquitto mosquitto_;
     volatile bool running_ = true;

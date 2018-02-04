@@ -16,7 +16,7 @@ public:
     };
 
 
-    MqttServer();
+    MqttServer(const std::string& serverPrefix);
     ~MqttServer();
     void start(Listener& listener);
     void pleaseFinish() {
@@ -30,6 +30,7 @@ public:
     void onMessage(const std::string& topic, const std::string& value) override;
 
 private:
+    std::string serverPrefix_;
     Mosquitto mosquitto_;
     Listener* listener_ = nullptr;
     volatile bool running_ = true;
