@@ -6,15 +6,15 @@
 
 using namespace std;
 
-static vector<string> splitString(const string& s, char delim) {
-    vector<string> result;
-    stringstream ss(s);
-    string item;
-    while (getline(ss, item, delim)) {
-        result.push_back(item);
-    }
-    return result;
-}
+//static vector<string> splitString(const string& s, char delim) {
+//    vector<string> result;
+//    stringstream ss(s);
+//    string item;
+//    while (getline(ss, item, delim)) {
+//        result.push_back(item);
+//    }
+//    return result;
+//}
 
 Properties::Properties(const std::string& file) {
     ifstream is{file};

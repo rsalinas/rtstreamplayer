@@ -23,7 +23,6 @@ void connect_callback(void *obj, int result)
 
 void message_callback(void *obj, const struct mosquitto_message *message)
 {
-	bool match = 0;
     printf("got a message '%.*s' for topic '%s'\n", message->payloadlen, (char*) message->payload, message->topic);
     fflush(stdout);
 //	mosquitto_topic_matches_sub("/devices/wb-adc/controls/+", message->topic, &match);
@@ -35,7 +34,7 @@ void message_callback(void *obj, const struct mosquitto_message *message)
 
 int main(int argc, char *argv[])
 {
-	uint8_t reconnect = true;
+//	uint8_t reconnect = true;
 	char clientid[24];
 	struct mosquitto *mosq;
 	int rc = 0;

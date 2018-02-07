@@ -80,6 +80,11 @@ bool TelegramBot::sendMessageToUser(const std::string& user, const std::string& 
     auto id = strtoll(user.c_str(), NULL, 10);
     clog << __FUNCTION__ << " tg id: " << id << " MSG: " << message << endl;
     auto m =  bot.getApi().sendMessage(id, message);
+    if (!m) {
+        clog << "Error sending message" << endl;
+        return false;
+    }
+    return true;
 }
 
 std::string TelegramBot::getHelp() {

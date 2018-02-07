@@ -22,7 +22,7 @@ public:
         auto samples = reinterpret_cast<short*>(buffer);
         unsigned long long int sum=0;
         auto maxVal=*samples;
-        for (size_t i=0; i < usedSamples; i++) {
+        for (ssize_t i=0; i < usedSamples; i++) {
             sum+=samples[i]*samples[i];
             if (samples[i] > maxVal)
                 maxVal = samples[i];

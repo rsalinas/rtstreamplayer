@@ -21,7 +21,7 @@ target_link_libraries(${PROJECT_NAME} ${SNDFILE_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} ${SDL_SOUND_LIBRARY})
 target_link_libraries(${PROJECT_NAME} ${SDL_LIBRARY})
 target_link_libraries(${PROJECT_NAME} mosquitto)
-target_link_libraries(${PROJECT_NAME} TgBot boost_system boost_iostreams ssl crypto)
+target_link_libraries(${PROJECT_NAME} TgBot boost_system boost_iostreams ssl crypto boost_regex)
 
 add_library(Mosquitto Mosquitto.h Mosquitto.cpp)
 target_link_libraries(Mosquitto mosquitto)

@@ -61,7 +61,7 @@ RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttSer
     wanted.format = AUDIO_S16;
     wanted.channels = sndfile->channels();
     wanted.samples = 32768; // sndfile->samplerate()*sndfile->channels()/2/2;
-    int wantedSamples = wanted.samples;
+//    int wantedSamples = wanted.samples;
     wanted.callback = [](void *udata, Uint8 *stream, int len) {
         static_cast<RtStreamPlayer *>(udata)->fill_audio(stream, len);
     };
@@ -219,6 +219,7 @@ int RtStreamPlayer::run() {
     LOG_INFO() << "Starting playback...";
     SDL_PauseAudio(0);
     readInput();
+    return true;
 }
 
 
@@ -252,6 +253,7 @@ bool RtStreamPlayer::startBackupSource() {
         shellExecutor.runCommand("./failed.sh");
         backupRunning = true;
     }
+    return true;
 }
 
 bool RtStreamPlayer::stopBackupSource() {
@@ -261,7 +263,7 @@ bool RtStreamPlayer::stopBackupSource() {
         backupRunning = false;
         mqttServer.setServerStatus("Streaming");
     }
-
+    return true;
 }
 
 const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::commands_ = {
@@ -300,7 +302,7 @@ const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::command
 };
 
 std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::string& cmdline) {
-    LOG_INFO() << __FUNCTION__ << " Actual command ..."  << cmdline << " for " << clientId;
+    LOG_INFO() << __FUNCTION__ << " ..."  << cmdline << " for " << clientId;
     auto ss = splitString(cmdline, ' ');
     if (ss.size() < 1) {
         return "ERROR";
@@ -309,5 +311,5 @@ std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::s
     if (kv != commands_.end()) {
         return  kv->second.func(cmdline, this);
     }
-    return "Missing";
+    return "Error: Unknown command";
 }

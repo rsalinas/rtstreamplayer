@@ -24,11 +24,11 @@ class SignalHandler {
     const int sig;
 public:
     SignalHandler(int sig, sighandler_t handler) : sig(sig) {
-        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
+//        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
         signal(sig, handler);
     }
     ~SignalHandler() {
-        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
+//        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
         signal(sig, SIG_DFL);
 
     }
@@ -63,7 +63,10 @@ int main(int argc, char **argv)
         SignalHandler intHandler{SIGINT, finishHandler};
         SignalHandler termHandler{SIGTERM, finishHandler};
 
-        instance->run();
+        if (!instance->run())
+            return EXIT_FAILURE;
+
+        return EXIT_SUCCESS;
     } catch (const std::exception &e) {
         LOG_INFO()  << "Exception: " << e.what() ;
     }

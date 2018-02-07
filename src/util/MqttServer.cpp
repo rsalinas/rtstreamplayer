@@ -9,7 +9,19 @@ MqttServer::MqttServer(const std::string& serverPrefix)
     : serverPrefix_(serverPrefix)
     , mosquitto_(__FUNCTION__, "localhost", 1883, &running_) {
     mosquitto_.setListener(*this);
-    mosquitto_.subscribe("#");
+    mosquitto_.subscribe(serverPrefix_ + "/cmd/#", [this](std::string topic, std::string value) {
+        clog << __FUNCTION__ << endl;
+        auto ss = splitString(topic, '/');
+        if (ss.size() != 3) {
+            clog << "Bad topic: " << topic << endl;
+            return;
+        }
+        auto newtopic = serverPrefix_ + "/response/" + ss[2];
+        auto result = listener_->runCommand(ss[2], value);
+        if (result.size()) {
+            mosquitto_.sendMessage(newtopic, result);
+        }
+    });
     clog << "MqttServer connected" << endl;
 }
 
@@ -38,19 +50,8 @@ void MqttServer::setCommandList(const std::map<std::string, CommandMeta>& cmds) 
         mosquitto_.sendMessage(serverPrefix_ + "/command/desc/" + kv.first, kv.second.desc, true);
     }
     mosquitto_.sendMessage(serverPrefix_ + "/commands", keys, true);
-
 }
 
 void MqttServer::onMessage(const std::string& topic, const std::string& value) {
     clog << __FUNCTION__  << " " << topic << " : " << value << endl;
-    auto ss = splitString(topic, '/');
-    if (ss.size() != 3) {
-        clog << "Ignoring bad message: " << value << " to " << topic << endl;
-        return;
-    }
-    if (ss[0] == serverPrefix_ && ss[1] == "cmd") {
-        auto topic = std::string{serverPrefix_ + "/response/"} + ss[2];
-        auto result = listener_->runCommand(ss[2], value);
-        mosquitto_.sendMessage(topic, result);
-    }
 }

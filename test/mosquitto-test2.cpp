@@ -30,7 +30,9 @@ int main() {
 
 
     Mosquitto m("m", "localhost", 1883, &run);
-    m.subscribe("hello");
+    m.subscribe("hello", [](std::string topic, std::string value) {
+        clog << "Message received for " << topic << ": " << value << endl;
+    });
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
     std::thread th(&Mosquitto::run, &m, 500);
