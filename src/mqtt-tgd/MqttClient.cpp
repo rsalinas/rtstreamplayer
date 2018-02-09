@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include "logging.h"
 
 using namespace std;
 
@@ -11,10 +12,14 @@ MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
     , mosquitto_(__FUNCTION__, "localhost", 1883, &running_) {
     mosquitto_.setListener(*this);
     mosquitto_.subscribe("rtsp/response/#", [this](std::string topic, std::string value) {
-        auto ss = splitString(topic, '/');
-        if (startsWith(topic, "rtsp/response/") && ss.size() == 3) {
-            listener_.messageForUser(ss[2], value);
-            return;
+        try {
+            auto ss = splitString(topic, '/');
+            if (startsWith(topic, "rtsp/response/") && ss.size() == 3) {
+                listener_.messageForUser(ss[2], value);
+                return;
+            }
+        } catch (...) {
+            LOG_WARN() << "Exception writing to telegram";
         }
     });
     mosquitto_.subscribe("rtsp/state", [this](std::string topic, std::string value) {
@@ -25,7 +30,7 @@ MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
         listener_.setCommands(splitString(value, ','));
 
     });
- }
+}
 
 MqttClient::~MqttClient() {
     running_= false;

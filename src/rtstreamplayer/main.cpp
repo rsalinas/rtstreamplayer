@@ -69,5 +69,7 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     } catch (const std::exception &e) {
         LOG_INFO()  << "Exception: " << e.what() ;
+    } catch (...) {
+        LOG_INFO()  << "Exception";
     }
 }

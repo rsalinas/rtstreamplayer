@@ -7,6 +7,8 @@ find_package(SDL REQUIRED)
 find_package(SDL_sound REQUIRED)
 add_subdirectory(src)
 
+add_custom_target(dummy SOURCES source.sh)
+
 enable_testing()
 include (CTest)
 

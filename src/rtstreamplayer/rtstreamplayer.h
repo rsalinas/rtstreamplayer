@@ -24,6 +24,34 @@ using std::chrono::steady_clock;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 
+class RtStreamPlayerException : public std::exception {
+public:
+    RtStreamPlayerException(const std::string& msg) : message_(msg) {
+    }
+    const char* what() const noexcept  override  {
+        return message_.c_str();
+    }
+
+private:
+    std::string message_;
+};
+
+class AutoJoiningThread : public std::thread {
+public:
+    AutoJoiningThread(MqttServer &mqttServer, MqttServer::Listener& listener) : std::thread([&] () {
+        mqttServer.start(listener);
+    }), mqttServer(mqttServer) {
+
+    }
+    ~AutoJoiningThread() {
+        mqttServer.pleaseFinish();
+        join();
+    }
+
+    MqttServer& mqttServer;
+};
+
+
 class RtStreamPlayer : public MqttServer::Listener {
 public:
     RtStreamPlayer(const Properties& props);
@@ -61,6 +89,7 @@ private:
     float downTime = 0;
     steady_clock::time_point startTime = steady_clock::now(), backupStarted;
     steady_clock::time_point underrunStartTime = steady_clock::now();
+    steady_clock::time_point lastInput{};
     const float SYNC_TIME = 1;
     const float MIN_BUFFER_TIME = 3;
     const float MARGIN_TIME = 2;
@@ -76,6 +105,8 @@ private:
     bool mustExit = false;
     size_t bufferSize;
     bool backupRunning = false;
+    bool validPackets = false;
+    bool muted_ = false;
 
     size_t secondsToBuffers(float seconds)
     {
@@ -100,7 +131,7 @@ private:
     std::string currentStatus();
     std::string status_;
     MqttServer mqttServer;
-    std::thread mqttServerThread_;
+    AutoJoiningThread mqttServerThread_;
 
     static const std::map<std::string, CommandSpec> commands_;
 };

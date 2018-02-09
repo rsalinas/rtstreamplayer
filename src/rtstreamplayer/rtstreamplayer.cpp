@@ -12,12 +12,27 @@
 
 using namespace std;
 
+struct Param  {
+    std::string name;
+    std::string defvalue;
+    std::string desc;
+};
+
+static const std::vector<Param> params = {
+    {"sync_time", "1", "Time to wait initially for synchronization"},
+    {"min_buffer_time", "3", "Minimum buffer size. Play does not start until this amount is filled up"},
+    {"margin_time", "2", "Extra delay that can be accumulated. Beyond it, sound is discarded until min_buffer_time"},
+    {"backup_wait", "5", "Time to wait after the main source fails until the backup is started"},
+    {"source", "./source.sh", "Command providing the RIFF WAV input"},
+    {"backup_start", "./backup-start.sh", "Command that starts the backup streaming"},
+    {"backup_stop", "./backup-stop.sh","Command  that stops the backup streaming"},
+};
+
 std::string RtStreamPlayer::currentStatus() {
     stringstream ss;
     ss << "Sample rate : " << samplerate ;
-    ss << " Channels    : "  <<  channels;
+    ss << " Channels    : "  << channels;
     ss << " Format: " <<  sndfile->format();
-
     return ss.str();
 }
 
@@ -29,10 +44,7 @@ static std::map<std::string, MqttServer::CommandMeta> adapt(const std::map<std::
     return ret;
 }
 
-RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttServer("rtsp") {
-    mqttServerThread_ = std::thread{[this] () {
-        mqttServer.start(*this);
-    }};
+RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttServer("rtsp"), mqttServerThread_(mqttServer, *this) {
     mqttServer.setServerStatus("Initializing");
     mqttServer.setCommandList(adapt(commands_));
 
@@ -40,7 +52,9 @@ RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttSer
     inputProcess = openProcess();
     sndfile.reset(new SndfileHandle(inputProcess->getFd(), false));
     if (!sndfile->samplerate()) {
-        throw std::runtime_error("Invalid format");
+        clog << "Bad format" << endl;
+        LOG_WARN() << "Bad format";
+        throw RtStreamPlayerException{"Invalid format"};
     }
     samplerate = sndfile->samplerate();
     channels = sndfile->channels();
@@ -49,7 +63,7 @@ RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttSer
     LOG_INFO()  <<  "    Channels    : " <<  channels;
     LOG_INFO()  <<  "    Format:       " <<  sndfile->format();
 
-    if (!sndfile->format() & SF_FORMAT_PCM_16) {
+    if (!(sndfile->format() & SF_FORMAT_PCM_16)) {
         throw std::runtime_error(
                     std::string("Invalid file format, PCM16 expected"));
     }
@@ -61,7 +75,7 @@ RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttSer
     wanted.format = AUDIO_S16;
     wanted.channels = sndfile->channels();
     wanted.samples = 32768; // sndfile->samplerate()*sndfile->channels()/2/2;
-//    int wantedSamples = wanted.samples;
+    //    int wantedSamples = wanted.samples;
     wanted.callback = [](void *udata, Uint8 *stream, int len) {
         static_cast<RtStreamPlayer *>(udata)->fill_audio(stream, len);
     };
@@ -83,6 +97,18 @@ RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttSer
         freeBuffers.push_back(audioBuffer);
     }
     LOG_INFO()  << "Buffer count: " << nBufs ;
+}
+
+RtStreamPlayer::~RtStreamPlayer() {
+    LOG_INFO() << "Closing";
+    mqttServer.setServerStatus("Closing");
+    SDL_CloseAudio();
+    for (auto buffer : readyBuffers) {
+        delete buffer;
+    }
+    for (auto buffer : freeBuffers) {
+        delete buffer;
+    }
 }
 
 
@@ -115,15 +141,31 @@ void RtStreamPlayer::readInput() {
         buf->usedSamples = sndfile->read(reinterpret_cast<short *>(buf->buffer),
                                          buf->length / 2);
         buf->calculateAverage();
+        auto now = steady_clock::now();
 
         //LOG_INFO()  << "read block: " << buf->usedSamples << " samples" << " " << freeBuffers.size() << " free buffers, " << readyBuffers.size() << " ready buffers" ;
         if (buf->usedSamples == 0) {
             LOG_INFO() << "EOF in input stream";
             sndfile.reset();
             inputProcess.reset();
+            std::ifstream t("cmd.out");
+            std::string cmdOut((std::istreambuf_iterator<char>(t)),
+                             std::istreambuf_iterator<char>());
+            clog << "cmd out: " << cmdOut << endl;
             LOG_INFO() << "Reopening process";
+            auto timeSinceLastData = duration_cast<duration<double>>(now - lastInput).count();
+            LOG_DEBUG() << "timeSinceLastData " << timeSinceLastData;
+            if (validPackets) {
+                mqttServer.setServerStatus("Reopen input process. Output was:\n\n" + cmdOut);
+                validPackets = false;
+            } else {
+                sleep(3);
+            }
             inputProcess = openProcess();
             sndfile.reset(new SndfileHandle(inputProcess->getFd(), false));
+        } else {
+            lastInput = now;
+            validPackets = true;
         }
 
         std::unique_lock<std::mutex> lock{mutex};
@@ -131,7 +173,8 @@ void RtStreamPlayer::readInput() {
         if (state == WaitingForInput) {
             state = Buffering;
             LOG_INFO() << "WaitingForInput -> Buffering";
-            startTime = steady_clock::now();
+            startTime = now;
+            mqttServer.setServerStatus("Buffering");
         }
     }
 }
@@ -145,6 +188,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
             lastWasSilence = true;
         }
     };
+
     AudioBuffer *buf = nullptr;
     auto now = steady_clock::now();
     auto fillingBufferInterval =
@@ -177,6 +221,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
         if (readyBuffers.empty()) {
             underrunCount++;
             LOG_INFO() << "Buffer underrun. Count == " << underrunCount;
+            mqttServer.setServerStatus("Buffer underrun. Count is " + to_string(underrunCount));
             startTime = now;
             underrunStartTime = now;
             state = WaitingForInput;
@@ -191,7 +236,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
         LOG_INFO() << "player found 0";
     }
 
-    if (buf->usedSamples * 2 != len) {
+    if (muted_ || buf->usedSamples * 2 != len) {
         LOG_WARN() << "buffer size mismatch: " <<  buf->usedSamples * 2 << " vs "
                    << len ;
         fillWithSilence();
@@ -212,7 +257,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
 }
 
 std::unique_ptr<Popen> RtStreamPlayer::openProcess() {
-    return std::unique_ptr<Popen>(new Popen{"exec ./source.sh", "r"});
+    return std::unique_ptr<Popen>(new Popen{"exec ./source.sh 2> cmd.out", "r"});
 }
 
 int RtStreamPlayer::run() {
@@ -221,30 +266,6 @@ int RtStreamPlayer::run() {
     readInput();
     return true;
 }
-
-
-RtStreamPlayer::~RtStreamPlayer() {
-    LOG_INFO() << __FUNCTION__ << ": Closing";
-
-    mqttServer.setServerStatus("Closing");
-    mqttServer.pleaseFinish();
-    //~ readThread.join();
-    SDL_CloseAudio();
-    for (auto buffer : readyBuffers) {
-        delete buffer;
-    }
-    for (auto buffer : freeBuffers) {
-        delete buffer;
-    }
-    //    mqttServer.setServerStatus("Disconnected");
-    LOG_INFO() << __FUNCTION__ << " finished";
-    //    mqttServer.pleaseFinish();
-    //    pthread_kill( botThread.native_handle(), SIGTERM);
-    //    botThread.join();
-
-    mqttServerThread_.join();
-}
-
 
 bool RtStreamPlayer::startBackupSource() {
     if (!backupRunning) {
@@ -267,38 +288,40 @@ bool RtStreamPlayer::stopBackupSource() {
 }
 
 const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::commands_ = {
-{"cpuinfo", CommandSpec{MqttServer::CommandMeta{false,"Get CPU info"},  [](std::string, RtStreamPlayer* self)  {
-    std::ifstream t("/proc/cpuinfo");
-    std::string str((std::istreambuf_iterator<char>(t)),
-                    std::istreambuf_iterator<char>());
-    return str;
-} }},
-{"quit", CommandSpec{MqttServer::CommandMeta{true, "Stop rtsp server"}, [](std::string, RtStreamPlayer* self)  {
-    self->pleaseFinish();
-    return "Quitting!";
-}}},
-{"temp", CommandSpec{MqttServer::CommandMeta{false, "Get CPU temperature"}, [](std::string, RtStreamPlayer* self)  {
-    std::ifstream t("/sys/class/thermal/thermal_zone0/temp");
-    std::string str((std::istreambuf_iterator<char>(t)),
-                    std::istreambuf_iterator<char>());
-    return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
+    {"cpuinfo", CommandSpec{MqttServer::CommandMeta{false,"Get CPU info"},  [](std::string, RtStreamPlayer* self)  {
+                                std::ifstream t("/proc/cpuinfo");
+                                std::string str((std::istreambuf_iterator<char>(t)),
+                                std::istreambuf_iterator<char>());
+                                return str;
+                            } }},
+    {"quit", CommandSpec{MqttServer::CommandMeta{true, "Stop rtsp server"}, [](std::string, RtStreamPlayer* self)  {
+                             self->pleaseFinish();
+                             return "Quitting!";
+                         }}},
+    {"temp", CommandSpec{MqttServer::CommandMeta{false, "Get CPU temperature"}, [](std::string, RtStreamPlayer* self)  {
+                             std::ifstream t("/sys/class/thermal/thermal_zone0/temp");
+                             std::string str((std::istreambuf_iterator<char>(t)),
+                             std::istreambuf_iterator<char>());
+                             return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
 
-}}},
-{"status", CommandSpec{MqttServer::CommandMeta{false, "Get current state"}, [](std::string, RtStreamPlayer* self)  {
-    return self->currentStatus();
-}}},
-{"uptime", CommandSpec{MqttServer::CommandMeta{false, "Get uptime of host and services"}, [](std::string, RtStreamPlayer* self)  {
-    std::ifstream t("/proc/uptime");
-    std::string str((std::istreambuf_iterator<char>(t)),
-                    std::istreambuf_iterator<char>());
-    return str;
-}}},
-{"mute", CommandSpec{MqttServer::CommandMeta{true, "Mute output. Flow is not interrupted"}, [](std::string, RtStreamPlayer* self)  {
-    return "Muted. Resume with /unmute";
-}}},
-{"unmute", CommandSpec{MqttServer::CommandMeta{true, "Unmute output, normal operation."}, [](std::string, RtStreamPlayer* self)  {
-    return "Unmuted. Mute with /mute";
-}}},
+                         }}},
+    {"status", CommandSpec{MqttServer::CommandMeta{false, "Get current state"}, [](std::string, RtStreamPlayer* self)  {
+                               return self->currentStatus();
+                           }}},
+    {"uptime", CommandSpec{MqttServer::CommandMeta{false, "Get uptime of host and services"}, [](std::string, RtStreamPlayer* self)  {
+                               std::ifstream t("/proc/uptime");
+                               std::string str((std::istreambuf_iterator<char>(t)),
+                               std::istreambuf_iterator<char>());
+                               return str;
+                           }}},
+    {"mute", CommandSpec{MqttServer::CommandMeta{true, "Mute output. Flow is not interrupted"}, [](std::string, RtStreamPlayer* self)  {
+                             self->muted_ = true;
+                             return "Muted. Resume with /unmute";
+                         }}},
+    {"unmute", CommandSpec{MqttServer::CommandMeta{true, "Unmute output, normal operation."}, [](std::string, RtStreamPlayer* self)  {
+                               self->muted_ = false;
+                               return "Unmuted. Mute with /mute";
+                           }}},
 };
 
 std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::string& cmdline) {

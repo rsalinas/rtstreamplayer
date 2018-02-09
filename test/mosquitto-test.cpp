@@ -16,12 +16,12 @@ void handle_signal(int s)
 	run = 0;
 }
 
-void connect_callback(void *obj, int result)
+void connect_callback(struct mosquitto*, void *obj, int result)
 {
 	printf("connect callback, rc=%d\n", result);
 }
 
-void message_callback(void *obj, const struct mosquitto_message *message)
+void message_callback(struct mosquitto*, void *obj, const struct mosquitto_message *message)
 {
     printf("got a message '%.*s' for topic '%s'\n", message->payloadlen, (char*) message->payload, message->topic);
     fflush(stdout);
@@ -46,18 +46,18 @@ int main(int argc, char *argv[])
 
 	memset(clientid, 0, 24);
 	snprintf(clientid, 23, "mysql_log_%d", getpid());
-    mosq = mosquitto_new(clientid, 0);
+    mosq = mosquitto_new(clientid, true, 0);
 
 	if(mosq){
 		mosquitto_connect_callback_set(mosq, connect_callback);
 		mosquitto_message_callback_set(mosq, message_callback);
 
-        rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60, true);
+        rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
 
         mosquitto_subscribe(mosq, NULL, "hello", 0);
 
 		while(run){
-            rc = mosquitto_loop(mosq, 100);
+            rc = mosquitto_loop(mosq, 100, 5);
 			if(run && rc){
 				printf("connection error!\n");
 				sleep(10);

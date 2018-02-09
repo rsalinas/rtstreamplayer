@@ -2,8 +2,8 @@
 
 #include <iostream>
 #include <map>
-using namespace std;
 
+using namespace std;
 
 MqttServer::MqttServer(const std::string& serverPrefix)
     : serverPrefix_(serverPrefix)
@@ -26,7 +26,6 @@ MqttServer::MqttServer(const std::string& serverPrefix)
 }
 
 MqttServer::~MqttServer() {
-
 }
 
 void MqttServer::start(Listener& listener) {
@@ -42,6 +41,7 @@ void MqttServer::setServerStatus(const std::string& str) {
 }
 
 void MqttServer::setCommandList(const std::map<std::string, CommandMeta>& cmds) {
+    clog << __FUNCTION__ << endl;
     std::string keys;
     for (const auto& kv : cmds) {
         if (keys.size())
@@ -49,9 +49,11 @@ void MqttServer::setCommandList(const std::map<std::string, CommandMeta>& cmds) 
         keys.append(kv.first);
         mosquitto_.sendMessage(serverPrefix_ + "/command/desc/" + kv.first, kv.second.desc, true);
     }
+    clog << "Commands: " << keys << endl;
     mosquitto_.sendMessage(serverPrefix_ + "/commands", keys, true);
 }
 
 void MqttServer::onMessage(const std::string& topic, const std::string& value) {
     clog << __FUNCTION__  << " " << topic << " : " << value << endl;
 }
+

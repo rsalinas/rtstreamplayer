@@ -1,9 +1,22 @@
 #include "TelegramBot.h"
 
 #include <iostream>
+#include "logging.h"
+#include <execinfo.h>
 
 using namespace std;
 
+static std::string execCmd(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
+    if (!pipe) throw std::runtime_error("popen() failed!");
+    while (!feof(pipe.get())) {
+        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+            result += buffer.data();
+    }
+    return result;
+}
 TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     : props_(props), listener_(listener)
     , bot(props_.getString("tgbot.token", "")) {
@@ -18,6 +31,11 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     bot.getEvents().onCommand("help", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, getHelp());
     });
+
+
+    bot.getEvents().onCommand("ip", [this](TgBot::Message::Ptr message) {
+        bot.getApi().sendMessage(message->chat->id, execCmd("curl https://api.ipify.org"));
+    });
     bot.getEvents().onCommand("set", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, "set param value", false, message->messageId);
     });
@@ -26,6 +44,9 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     });
 
     bot.getEvents().onNonCommandMessage([this](TgBot::Message::Ptr message) {
+        if (message->audio) {
+            clog << "It is an audio!"<<endl;
+        }
         printf("User wrote %s\n", message->text.c_str());
         if (StringTools::startsWith(message->text, "/start")) {
             return;
@@ -55,7 +76,13 @@ void TelegramBot::run() {
     TgBot::TgLongPoll longPoll(bot);
     while (running_) {
         printf("Long poll started\n");
+        try {
         longPoll.start();
+        } catch (const TgBot::TgException& e) {
+            clog << "Ex: " << e.what() << endl;
+        } catch (...) {
+            LOG_WARN() << "Exception";
+        }
     }
 
 }
@@ -79,7 +106,7 @@ bool TelegramBot::sendMessageToSubscribed(const std::string& msg) {
 bool TelegramBot::sendMessageToUser(const std::string& user, const std::string& message) {
     auto id = strtoll(user.c_str(), NULL, 10);
     clog << __FUNCTION__ << " tg id: " << id << " MSG: " << message << endl;
-    auto m =  bot.getApi().sendMessage(id, message);
+    auto m = bot.getApi().sendMessage(id, message.substr(0, 4096));
     if (!m) {
         clog << "Error sending message" << endl;
         return false;
