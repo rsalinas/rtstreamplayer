@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <map>
+#include "string_utils.h"
 
 using namespace std;
 
@@ -28,7 +29,9 @@ MqttServer::MqttServer(const std::string& serverPrefix)
 MqttServer::~MqttServer() {
 }
 
-void MqttServer::start(Listener& listener) {
+
+
+void MqttServer::run(Listener& listener) {
     listener_ = &listener;
     while (running_) {
         clog << __FUNCTION__ << " Still running" << endl;
@@ -51,6 +54,10 @@ void MqttServer::setCommandList(const std::map<std::string, CommandMeta>& cmds) 
     }
     clog << "Commands: " << keys << endl;
     mosquitto_.sendMessage(serverPrefix_ + "/commands", keys, true);
+}
+
+void MqttServer::setParamList(const std::string& list) {
+    mosquitto_.sendMessage(serverPrefix_ + "/params", list, true);
 }
 
 void MqttServer::onMessage(const std::string& topic, const std::string& value) {

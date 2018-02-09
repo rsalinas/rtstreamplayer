@@ -1,8 +1,9 @@
 #include "MqttClient.h"
 #include "TelegramBot.h"
-
+#include "logging.h"
 #include <iostream>
 #include <thread>
+#include "SignalHandler.h"
 
 using namespace std;
 
@@ -32,6 +33,12 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
         clog << endl;
     }
 
+    void setParams(const std::string& paramEncoded) override {
+        clog << "Params are: " << paramEncoded;
+        bot.setParams(paramEncoded);
+    }
+
+
     Main()
         : props_("config.props")
         , mc("rtsp", *this)
@@ -39,6 +46,9 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
         mqttThread_ = std::thread{[this]() {
             mc.run();
         }};
+
+
+
     }
     ~Main() {
         mqttThread_.join();
@@ -49,6 +59,14 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
     }
 
     int run() {
+//        LOG_DEBUG() << "Set signals";
+//        auto finishHandler = [](int signo) {
+//            LOG_INFO() << "signal " << signo;
+//            clog << "signal " << signo << endl;
+
+//        };
+//        SignalHandler intHandler{SIGINT, finishHandler};
+//        SignalHandler termHandler{SIGTERM, finishHandler};
         bot.run();
         return EXIT_SUCCESS;
     }

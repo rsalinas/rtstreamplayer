@@ -3,6 +3,7 @@
 #include "rtstreamplayer.h"
 #include <thread>
 #include "Properties.h"
+#include "SignalHandler.h"
 
 static std::unique_ptr<RtStreamPlayer> instance;
 
@@ -20,30 +21,9 @@ void signalHandler(int sig) {
     }
 }
 
-class SignalHandler {
-    const int sig;
-public:
-    SignalHandler(int sig, sighandler_t handler) : sig(sig) {
-//        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
-        signal(sig, handler);
-    }
-    ~SignalHandler() {
-//        LOG_DEBUG()  << __FUNCTION__ << " " << strsignal(sig) ;
-        signal(sig, SIG_DFL);
-
-    }
-};
-
-
-
 int main(int argc, char **argv)
 {
     Properties props{"config.props"};
-//    std::thread th{[]() {
-
-//                   }};
-//    th.join();
-
     LOG_INFO() << "rtsp";
     try {
         instance.reset(new RtStreamPlayer{props});

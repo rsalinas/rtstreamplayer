@@ -18,6 +18,7 @@ enum LogLevel {
 #define LOG_INFO() LoggerProxy{LogLevel::INFO}
 #define LOG_WARN() LoggerProxy{LogLevel::WARN}
 #define LOG_DEBUG() LoggerProxy{LogLevel::DEBUG}
+#define LOG_ERROR() LoggerProxy{LogLevel::ERROR}
 
 class LoggerProxy  {
     const LogLevel logLevel;

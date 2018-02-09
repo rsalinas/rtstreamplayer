@@ -9,6 +9,8 @@
 #include <map>
 #include <iostream>
 #include <sstream>
+#include "popen.h"
+#include "string_utils.h"
 
 using namespace std;
 
@@ -28,6 +30,8 @@ static const std::vector<Param> params = {
     {"backup_stop", "./backup-stop.sh","Command  that stops the backup streaming"},
 };
 
+
+
 std::string RtStreamPlayer::currentStatus() {
     stringstream ss;
     ss << "Sample rate : " << samplerate ;
@@ -43,10 +47,18 @@ static std::map<std::string, MqttServer::CommandMeta> adapt(const std::map<std::
     }
     return ret;
 }
+std::string RtStreamPlayer::adaptParams() {
+    string ret;
+    for (const auto& param : params) {
+        ret += param.name + "|" + param.desc + "|" + paramValues_[param.name] +"\n";
+    }
+    return ret;
+}
 
 RtStreamPlayer::RtStreamPlayer(const Properties& props) : props_(props), mqttServer("rtsp"), mqttServerThread_(mqttServer, *this) {
     mqttServer.setServerStatus("Initializing");
     mqttServer.setCommandList(adapt(commands_));
+    mqttServer.setParamList(adaptParams());
 
     startBackupSource();
     inputProcess = openProcess();
@@ -144,13 +156,15 @@ void RtStreamPlayer::readInput() {
         auto now = steady_clock::now();
 
         //LOG_INFO()  << "read block: " << buf->usedSamples << " samples" << " " << freeBuffers.size() << " free buffers, " << readyBuffers.size() << " ready buffers" ;
-        if (buf->usedSamples == 0) {
+        if (mustReopen_ || buf->usedSamples == 0) {
+            bool wasIntentional = false;
+            swap(mustReopen_, wasIntentional);
             LOG_INFO() << "EOF in input stream";
             sndfile.reset();
             inputProcess.reset();
             std::ifstream t("cmd.out");
             std::string cmdOut((std::istreambuf_iterator<char>(t)),
-                             std::istreambuf_iterator<char>());
+                               std::istreambuf_iterator<char>());
             clog << "cmd out: " << cmdOut << endl;
             LOG_INFO() << "Reopening process";
             auto timeSinceLastData = duration_cast<duration<double>>(now - lastInput).count();
@@ -322,6 +336,16 @@ const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::command
                                self->muted_ = false;
                                return "Unmuted. Mute with /mute";
                            }}},
+    {"reopen", CommandSpec{MqttServer::CommandMeta{true, "Reopen source."}, [](std::string, RtStreamPlayer* self)  {
+                               self->reopen();
+                               return "Will reopen";
+                           }}},
+
+
+    {"player_version", CommandSpec{MqttServer::CommandMeta{true, "Show rtstreamplayer version."}, [](std::string, RtStreamPlayer* self)  {
+                                       return execCmd(string{"stat -L /proc/"}+to_string(getpid())+"/exe  --format %y");
+                                   }}},
+
 };
 
 std::string RtStreamPlayer::runCommand(const std::string& clientId, const std::string& cmdline) {

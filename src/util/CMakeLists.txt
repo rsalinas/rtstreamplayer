@@ -10,11 +10,14 @@ pkg_search_module(SNDFILE REQUIRED sndfile)
 add_library(${PROJECT_NAME}
     popen.h buffer.h
     logging.h logging.cpp
-    process.h
+    process.h popen.cpp
     MqttServer.h MqttServer.cpp
     Mosquitto.cpp Mosquitto.h
     Properties.cpp Properties.h
     TelegramBot.cpp TelegramBot.h
+    string_utils.cpp string_utils.h
+    SubscriptionManager.cpp SubscriptionManager.h
+    SignalHandler.cpp SignalHandler.h
 )
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${SNDFILE_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${SNDFILE_LIBRARIES})

@@ -1,13 +1,12 @@
 #pragma once
 
+#include <mosquitto.h>
+
 #include <string>
 #include <vector>
 #include <functional>
 #include <boost/regex.hpp>
 #include <vector>
-
-std::vector<std::string> splitString(const std::string& s, char delim);
-bool startsWith(const std::string& hay, const std::string& needle);
 
 class  Mosquitto {
 public:

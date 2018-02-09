@@ -2,25 +2,31 @@
 
 #include <iostream>
 #include "logging.h"
-#include <execinfo.h>
+#include "popen.h"
+#include "string_utils.h"
 
 using namespace std;
 
-static std::string execCmd(const char* cmd) {
-    std::array<char, 128> buffer;
-    std::string result;
-    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
-    if (!pipe) throw std::runtime_error("popen() failed!");
-    while (!feof(pipe.get())) {
-        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
-            result += buffer.data();
-    }
-    return result;
+static std::string myVersion() {
+    return execCmd(string{"stat -L /proc/"}+to_string(getpid())+"/exe  --format %y");
 }
+
+void TelegramBot::registerCommand(const std::string& name, const std::string& desc, const TgBot::EventBroadcaster::MessageListener& listener) {
+    myCommands_ += "/" + name;
+    if (desc.size()) {
+        myCommands_.append(" - ").append(desc);
+    }
+    myCommands_.append("\n");
+    bot.getEvents().onCommand(name, listener);
+}
+TelegramBot::~TelegramBot() {
+    LOG_INFO() << __FUNCTION__;
+}
+
 TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     : props_(props), listener_(listener)
     , bot(props_.getString("tgbot.token", "")) {
-    bot.getEvents().onCommand("start", [this](TgBot::Message::Ptr message) {
+    registerCommand("start", "Start command", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, "Welcome!");
         bot.getApi().sendMessage(message->chat->id, getHelp());
     });
@@ -28,19 +34,39 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
         bot.getApi().sendMessage(message->chat->id, "Bad command: " + message->text);
     });
 
-    bot.getEvents().onCommand("help", [this](TgBot::Message::Ptr message) {
+    registerCommand("help", "Show this help", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, getHelp());
     });
 
 
-    bot.getEvents().onCommand("ip", [this](TgBot::Message::Ptr message) {
+    registerCommand("ip", "Show server's IP", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, execCmd("curl https://api.ipify.org"));
     });
-    bot.getEvents().onCommand("set", [this](TgBot::Message::Ptr message) {
+    registerCommand("bot_version", "Show this software's version", [this](TgBot::Message::Ptr message) {
+        bot.getApi().sendMessage(message->chat->id, myVersion());
+    });
+    registerCommand("quitbot", "Stop the Telegram bot", [this](TgBot::Message::Ptr message) {
+        bot.getApi().sendMessage(message->chat->id, "Ignored");
+        //        running_ = false;
+    });
+    registerCommand("set", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, "set param value", false, message->messageId);
     });
-    bot.getEvents().onCommand("get", [this](TgBot::Message::Ptr message) {
+    registerCommand("params", "Get parameters", [this](TgBot::Message::Ptr message) {
+        bot.getApi().sendMessage(message->chat->id, paramHelp_);
+    });
+    registerCommand("get", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, std::string{"get param -> "}  + message->text );
+    });
+
+    registerCommand("subscribe", "Subscribe to events", [this](TgBot::Message::Ptr message) {
+        subscribe(message->chat->id);
+        bot.getApi().sendMessage(message->chat->id, "Subscribed. Total subscriptors: " + subscriptionManager_.getSubscriptors().size());
+    });
+
+    registerCommand("unsubscribe", "Subscribe to events", [this](TgBot::Message::Ptr message) {
+        unsubscribe(message->chat->id);
+        bot.getApi().sendMessage(message->chat->id, "Unsubscribed. Total subscriptors: " + subscriptionManager_.getSubscriptors().size());
     });
 
     bot.getEvents().onNonCommandMessage([this](TgBot::Message::Ptr message) {
@@ -55,12 +81,25 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
     });
     try {
         printf("Bot username: %s\n", bot.getApi().getMe()->username.c_str());
-        //        bot.getApi().sendMessage(7654160, "Server up");
+        sendMessageToSubscribed("Telegram bot started. Version: " + myVersion());
+
     } catch (TgBot::TgException& e) {
         printf("error: %s\n", e.what());
     }
 
 }
+
+bool TelegramBot::subscribe(int64_t id) {
+    subscriptionManager_.add(std::to_string(id));
+    return true;
+}
+
+bool TelegramBot::unsubscribe(int64_t id) {
+    subscriptionManager_.remove(std::to_string(id));
+    return true;
+}
+
+
 
 void TelegramBot::setCommands(const std::vector<std::string>& cmds) {
     commandNames_ = cmds;
@@ -72,19 +111,38 @@ void TelegramBot::setCommands(const std::vector<std::string>& cmds) {
     }
 }
 
+void TelegramBot::setParams(const std::string& paramEncoded) {
+    paramHelp_.clear();
+    for (auto line : splitString(paramEncoded, '\n')) {
+        auto ss = splitString(line, '|');
+        if (ss.size() <2) {
+            clog << "skipping bad line: " << line << " " << ss.size() << endl;
+            continue;
+        }
+        paramHelp_ += ss[0] + " - " +  ss[1];
+        if (ss.size() == 3) {
+            paramHelp_ += " " + paren(ss[2]);
+        }
+        paramHelp_ += "\n";
+    }
+    clog << "END" <<endl <<endl;
+
+}
+
 void TelegramBot::run() {
     TgBot::TgLongPoll longPoll(bot);
     while (running_) {
-        printf("Long poll started\n");
+        LOG_DEBUG() << "Long poll started";
         try {
-        longPoll.start();
+            longPoll.start();
         } catch (const TgBot::TgException& e) {
-            clog << "Ex: " << e.what() << endl;
+            clog << "Exception in TelegramBot::run(): " << e.what() << endl;
+            throw;
         } catch (...) {
             LOG_WARN() << "Exception";
+            throw;
         }
     }
-
 }
 
 void TelegramBot::setServerStatus(const std::string& str) {
@@ -96,7 +154,11 @@ void TelegramBot::setServerStatus(const std::string& str) {
 }
 
 bool TelegramBot::sendMessageToSubscribed(const std::string& msg) {
-    for (auto id :  { 7654160L }) { //FIXME
+    std::vector<uint64_t> ids;
+    for (auto str : subscriptionManager_.getSubscriptors()) {
+        ids.push_back(std::stoul(str));
+    }
+    for (auto id :  ids) { //FIXME
         auto m =  bot.getApi().sendMessage(id, msg);
     }
     return true;
@@ -116,9 +178,11 @@ bool TelegramBot::sendMessageToUser(const std::string& user, const std::string& 
 
 std::string TelegramBot::getHelp() {
     std::string help{"bot Help:\n"};
+    help.append(myCommands_).append("\n");
     for (const auto& cmd : commandNames_) {
         help.append("/").append(cmd).append("\n");
     }
     return help;
 }
+
 

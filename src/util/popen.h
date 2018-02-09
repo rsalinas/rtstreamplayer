@@ -2,7 +2,8 @@
 
 #include <cstdio>
 #include "logging.h"
-
+#include <array>
+#include <memory>
 
 class Popen
 {
@@ -23,3 +24,6 @@ public:
         LOG_INFO()  << "closed source with exit value: " << retval;
     }
 };
+
+std::string execCmd(const char* cmd);
+std::string execCmd(const std::string& cmd);

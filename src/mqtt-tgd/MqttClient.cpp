@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include "logging.h"
+#include "string_utils.h"
 
 using namespace std;
 
@@ -28,8 +29,12 @@ MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
     });
     mosquitto_.subscribe("rtsp/commands",  [this](std::string topic, std::string value) {
         listener_.setCommands(splitString(value, ','));
-
     });
+    mosquitto_.subscribe("rtsp/params",  [this](std::string topic, std::string value) {
+        LOG_DEBUG() << "PARAMETROS: " << topic << ":" << value ;
+        listener_.setParams(value);
+    });
+
 }
 
 MqttClient::~MqttClient() {
@@ -43,7 +48,7 @@ void MqttClient::run() {
 }
 
 void MqttClient::runCommand(int64_t clientId, const std::string& cmdline) {
-    clog << __FUNCTION__ << clientId << ": " << cmdline << endl;
+    LOG_DEBUG() << __FUNCTION__ << clientId << ": " << cmdline ;
     mosquitto_.sendMessage((std::string{"rtsp/cmd/"}+to_string(clientId)).c_str(), cmdline);
 }
 

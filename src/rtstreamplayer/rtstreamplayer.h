@@ -36,20 +36,6 @@ private:
     std::string message_;
 };
 
-class AutoJoiningThread : public std::thread {
-public:
-    AutoJoiningThread(MqttServer &mqttServer, MqttServer::Listener& listener) : std::thread([&] () {
-        mqttServer.start(listener);
-    }), mqttServer(mqttServer) {
-
-    }
-    ~AutoJoiningThread() {
-        mqttServer.pleaseFinish();
-        join();
-    }
-
-    MqttServer& mqttServer;
-};
 
 
 class RtStreamPlayer : public MqttServer::Listener {
@@ -75,6 +61,10 @@ public:
         MqttServer::CommandMeta meta;
         std::function<std::string(std::string, RtStreamPlayer*)> func;
     };
+
+    void reopen() {
+        mustReopen_ = true;
+    }
 
 private:
     void fill_audio(Uint8 *stream, int len);
@@ -107,6 +97,7 @@ private:
     bool backupRunning = false;
     bool validPackets = false;
     bool muted_ = false;
+    bool mustReopen_ = false;
 
     size_t secondsToBuffers(float seconds)
     {
@@ -119,6 +110,7 @@ private:
         return float(buffers) * bufferSize /
                 (float(sndfile->samplerate()) * sndfile->channels() * 2);
     }
+    std::string adaptParams();
 
     void readInput();
 
@@ -132,6 +124,6 @@ private:
     std::string status_;
     MqttServer mqttServer;
     AutoJoiningThread mqttServerThread_;
-
+    std::map<std::string, std::string> paramValues_;
     static const std::map<std::string, CommandSpec> commands_;
 };

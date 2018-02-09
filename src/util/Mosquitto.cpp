@@ -1,11 +1,11 @@
 #include "Mosquitto.h"
 
-#include "mosquitto.h"
 #include <string.h>
 #include <unistd.h>
-#include <iostream>
 #include <errno.h>
 #include <sstream>
+#include "logging.h"
+#include <iostream>
 
 using namespace std;
 
@@ -15,13 +15,13 @@ Mosquitto::Mosquitto(const char* name, const char* mqtt_host, int mqtt_port, vol
     (void) libInit;
     mosq = mosquitto_new(name, false/* TODO */, this);
     if (!mosq)    {
-        clog << "mosquitto_new failed" << endl;
+        LOG_ERROR() << "mosquitto_new failed";
         return;
     }
-//    mosquitto_threaded_set(mosq, true);
+    mosquitto_threaded_set(mosq, true);
     mosquitto_connect_callback_set(mosq, [](struct mosquitto*, void *obj, int result) {
-//        auto self = static_cast<Mosquitto*>(obj);
-        clog << "Connected: " << result << endl;
+        //        auto self = static_cast<Mosquitto*>(obj);
+        LOG_INFO() << "Connected: " << result;
     });
     mosquitto_message_callback_set(mosq, [](struct mosquitto*, void *obj, const struct mosquitto_message *message) {
         auto self = static_cast<Mosquitto*>(obj);
@@ -42,9 +42,9 @@ Mosquitto::Mosquitto(const char* name, const char* mqtt_host, int mqtt_port, vol
     });
 
     int rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
-    clog << "mosquitto_connect: " << rc << endl;
+    LOG_INFO() << "mosquitto_connect: " << rc;
     if (rc != MOSQ_ERR_SUCCESS)  {
-        clog << "COULT NOT CONNECT!" << endl;
+        LOG_ERROR() << "COULD NOT CONNECT!";
         mosquitto_destroy((mosq));
         mosq = nullptr;
     }
@@ -53,40 +53,39 @@ Mosquitto::Mosquitto(const char* name, const char* mqtt_host, int mqtt_port, vol
 
 bool Mosquitto::subscribe(const std::string& topic, std::function<void(std::string,std::string)> f) {
     if (!mosq) {
-        clog << "null mosq in " << __FUNCTION__ << endl;
+        LOG_ERROR() << "null mosq in " << __FUNCTION__;
         return false;
     }
     int messageId;
 
     int rc= mosquitto_subscribe(mosq, &messageId, topic.c_str(), 0);
     if (rc != MOSQ_ERR_SUCCESS) {
-        clog << "Error subscribing" << endl;
+        LOG_ERROR() << "Error subscribing";
         return false;
     }
-    clog << "subscribed " << rc << " topic: " << topic << " mid == " << messageId << endl;
+    LOG_DEBUG() << "subscribed " << rc << " topic: " << topic << " mid == " << messageId;
     static auto sharpSign = boost::regex{"#"};
     static auto plusSign = boost::regex{"\\+"};
     auto topic2 = regex_replace(topic, sharpSign, std::string{".*"}) ;
     topic2 = regex_replace(topic2, plusSign, std::string{"[^/]*"});
 
-    clog << "TOPIC2: " << topic2 << " from " << topic << endl;
+    LOG_DEBUG() << "TOPIC2: " << topic2 << " from " << topic;
     handlers_.push_back(make_pair(boost::regex{"^" + topic2 + "$"}, f));
     return true;
 }
 
-
 bool Mosquitto::run(int timeoutMs) {
     if (!mosq) {
-        clog << "null mosq in " << __FUNCTION__  << endl;
+        LOG_ERROR() << "null mosq in " << __FUNCTION__;
         return false;
     }
     while (run_ == nullptr || *run_) {
         int rc = mosquitto_loop(mosq, timeoutMs, 5 /* TODO MAX PACKETS */);
-//        clog << "loop..." << rc << endl;
+        //        clog << "loop..." << rc << endl;
 
         if((run_==nullptr || *run_) && rc != MOSQ_ERR_SUCCESS){
             const char* errstr = strerror(errno);
-            clog << "Reconnection error " << rc << " " << errstr << endl;
+            LOG_WARN() << "Reconnection error " << rc << " " << errstr;
             sleep(10);
             mosquitto_reconnect(mosq);
         }
@@ -102,15 +101,15 @@ Mosquitto::~Mosquitto() {
 }
 
 bool Mosquitto::sendMessage(const char * topic, const std::string& value, bool retained) {
-    clog << __FUNCTION__ << " " << topic << ": " << value << endl;
+    LOG_DEBUG() << __FUNCTION__ << " " << topic << ": " << value;
     int messageId;
     auto payload = (const uint8_t*) value.c_str();
     int rc = mosquitto_publish(mosq, &messageId, topic, value.size() + 1, payload, 0, retained);
     if (rc != MOSQ_ERR_SUCCESS) {
-        clog << "Error sending message" << endl;
+        LOG_ERROR() << "Error sending message";
         return false;
     }
-    clog << "messageId " << messageId << endl;
+    LOG_INFO() << "messageId " << messageId;
     return true;
 }
 
@@ -118,16 +117,4 @@ bool Mosquitto::sendMessage(const std::string& topic, const std::string& value, 
     return sendMessage(topic.c_str(), value, retained);
 }
 
-vector<string> splitString(const string& s, char delim) {
-    vector<string> result;
-    stringstream ss(s);
-    string item;
-    while (getline(ss, item, delim)) {
-        result.push_back(item);
-    }
-    return result;
-}
 
-bool startsWith(const std::string& hay, const std::string& needle) {
-    return  hay.compare(0, needle.length(), needle) == 0;
-}
