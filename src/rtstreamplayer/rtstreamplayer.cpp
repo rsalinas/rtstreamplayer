@@ -248,9 +248,12 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
         LOG_INFO() << "player found 0";
     }
 
-    if (muted_ || buf->usedSamples * 2 != len) {
+    if (buf->usedSamples * 2 != len) {
         LOG_WARN() << "buffer size mismatch: " <<  buf->usedSamples * 2 << " vs "
-                   << len ;
+               << len ;
+    }
+
+    if (muted_ || buf->usedSamples * 2 != len) {
         fillWithSilence();
     } else {
         lastWasSilence = false;
