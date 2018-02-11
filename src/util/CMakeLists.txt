@@ -18,6 +18,7 @@ add_library(${PROJECT_NAME}
     string_utils.cpp string_utils.h
     SubscriptionManager.cpp SubscriptionManager.h
     SignalHandler.cpp SignalHandler.h
+    MqttClient.h MqttClient.cpp MqttTgD.h MqttTgD.cpp
 )
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${SNDFILE_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${SNDFILE_LIBRARIES})
