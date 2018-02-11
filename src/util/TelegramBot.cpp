@@ -86,7 +86,7 @@ TelegramBot::TelegramBot(const std::string& appname, const Properties& props, Li
         bot.getApi().sendMessage(message->chat->id, "Your message is: " + message->text);
     });
     try {
-        printf("Bot username: %s\n", bot.getApi().getMe()->username.c_str());
+        LOG_INFO() << "Bot username: " << bot.getApi().getMe()->username;
         sendMessageToSubscribed("Telegram bot started. Version: " + myVersion());
 
     } catch (TgBot::TgException& e) {
@@ -112,7 +112,7 @@ void TelegramBot::setCommands(const std::vector<std::string>& cmds) {
     for (const auto& cmd : cmds) {
         clog << "Registering command " << cmd << endl;
         bot.getEvents().onCommand(cmd, [this, cmd](TgBot::Message::Ptr message) {
-            listener_.runCommand(message->chat->id, cmd);
+            listener_.runCommand(message->chat->id, message->text.substr(1));
         });
     }
 }

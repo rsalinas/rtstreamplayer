@@ -34,7 +34,9 @@ MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener, cons
         LOG_DEBUG() << "PARAMETROS: " << topic << ":" << value ;
         listener_.setParams(value);
     });
-
+    mosquitto_.subscribe(serverPrefix_ + "/param/+",  [this](std::string topic, std::string value) {
+        LOG_DEBUG() << "Parameter: " << topic << " = " << value ;
+    });
 }
 
 MqttClient::~MqttClient() {

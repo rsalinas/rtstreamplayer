@@ -43,6 +43,11 @@ void MqttServer::setServerStatus(const std::string& str) {
     mosquitto_.sendMessage(serverPrefix_ + "/state", str);
 }
 
+void MqttServer::parameterChanged(const std::string& param, const std::string& value) {
+     mosquitto_.sendMessage(serverPrefix_ + "/param/" + param, value, true);
+}
+
+
 void MqttServer::setCommandList(const std::map<std::string, CommandMeta>& cmds) {
     clog << __FUNCTION__ << endl;
     std::string keys;
