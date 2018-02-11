@@ -25,7 +25,7 @@ Mosquitto::Mosquitto(const char* name, const char* mqtt_host, int mqtt_port, vol
     });
     mosquitto_message_callback_set(mosq, [](struct mosquitto*, void *obj, const struct mosquitto_message *message) {
         auto self = static_cast<Mosquitto*>(obj);
-        std::string msg{(char*)message->payload, (size_t) message->payloadlen - 1};
+        std::string msg{(char*)message->payload, (size_t) message->payloadlen};
         printf("got a message '%.*s' for topic '%s'\n", (int) msg.size(), msg.c_str(), message->topic);
         fflush(stdout);
 
@@ -104,7 +104,7 @@ bool Mosquitto::sendMessage(const char * topic, const std::string& value, bool r
     LOG_DEBUG() << __FUNCTION__ << " " << topic << ": " << value;
     int messageId;
     auto payload = (const uint8_t*) value.c_str();
-    int rc = mosquitto_publish(mosq, &messageId, topic, value.size() + 1, payload, 0, retained);
+    int rc = mosquitto_publish(mosq, &messageId, topic, value.size(), payload, 0, retained);
     if (rc != MOSQ_ERR_SUCCESS) {
         LOG_ERROR() << "Error sending message";
         return false;
