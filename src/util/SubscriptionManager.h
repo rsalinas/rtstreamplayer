@@ -6,7 +6,7 @@
 
 class SubscriptionManager {
 public:
-      SubscriptionManager(const std::string& filename = "subscriptors.txt");
+      SubscriptionManager(const std::string& filename);
       ~SubscriptionManager();
       void add(const std::string& id);
       void remove(const std::string& id);

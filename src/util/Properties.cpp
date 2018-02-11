@@ -3,6 +3,7 @@
 #include <fstream>
 #include <vector>
 #include <sstream>
+#include "logging.h"
 
 using namespace std;
 
@@ -17,6 +18,7 @@ using namespace std;
 //}
 
 Properties::Properties(const std::string& file) {
+    LOG_INFO() << "Loading properties from " << file;
     ifstream is{file};
     char line[1024];
     while (is.getline(line, sizeof line)) {

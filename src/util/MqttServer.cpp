@@ -8,7 +8,7 @@ using namespace std;
 
 MqttServer::MqttServer(const std::string& serverPrefix)
     : serverPrefix_(serverPrefix)
-    , mosquitto_(__FUNCTION__, "localhost", 1883, &running_) {
+    , mosquitto_(serverPrefix.c_str(), "localhost", 1883, &running_) {
     mosquitto_.setListener(*this);
     mosquitto_.subscribe(serverPrefix_ + "/cmd/#", [this](std::string topic, std::string value) {
         clog << __FUNCTION__ << endl;
@@ -31,11 +31,11 @@ MqttServer::~MqttServer() {
 
 
 
-void MqttServer::run(Listener& listener) {
+void MqttServer::run(Listener& listener, int ms) {
     listener_ = &listener;
     while (running_) {
         clog << __FUNCTION__ << " Still running" << endl;
-        mosquitto_.run(1000);
+        mosquitto_.run(ms);
     }
 }
 

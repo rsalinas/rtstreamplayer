@@ -11,6 +11,7 @@ using namespace std;
 
 Mosquitto::Mosquitto(const char* name, const char* mqtt_host, int mqtt_port, volatile bool* keepGoing)
     : run_(keepGoing) {
+    clog << "Connecting to " << mqtt_host << ":" << mqtt_port << " with name " << name << endl;
     static auto libInit = mosquitto_lib_init();
     (void) libInit;
     mosq = mosquitto_new(name, false/* TODO */, this);

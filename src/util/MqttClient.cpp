@@ -7,10 +7,10 @@
 
 using namespace std;
 
-MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
+MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener, const char* host, int port)
     : serverPrefix_(serverPrefix)
     , listener_(listener)
-    , mosquitto_(__FUNCTION__, "localhost", 1883, &running_) {
+    , mosquitto_((serverPrefix+"_client").c_str(), host, port, &running_) {
     mosquitto_.setListener(*this);
     mosquitto_.subscribe(serverPrefix_ + "/response/#", [this](std::string topic, std::string value) {
         try {

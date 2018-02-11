@@ -17,7 +17,7 @@ public:
 
     void onMessage(const std::string& topic, const std::string& value) override;
 
-    MqttClient(const std::string& serverPrefix, Listener& listener);
+    MqttClient(const std::string& serverPrefix, Listener& listener, const char* host, int port);
     ~MqttClient();
 
     void run();

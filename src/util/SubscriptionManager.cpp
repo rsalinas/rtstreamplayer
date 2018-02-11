@@ -6,6 +6,11 @@ using namespace std;
 SubscriptionManager::SubscriptionManager(const std::string& filename) : filename_(filename) {
     LOG_DEBUG() << __FUNCTION__;
     ifstream f{filename};
+    if (!f) {
+        LOG_INFO() << "Could not load subscribers from " << filename;
+        return;
+    }
+    LOG_INFO() << "Loading subscribers from " << filename;
     char buffer[1024];
     while (f.getline(buffer, sizeof buffer)) {
         map_[string{buffer}] = "";
@@ -16,7 +21,10 @@ SubscriptionManager::SubscriptionManager(const std::string& filename) : filename
 bool SubscriptionManager::persist() {
     if (changed_) {
         changed_ = false;
-        ofstream f;
+        ofstream f{filename_};
+        if (!f) {
+            LOG_ERROR() << "Could NOT write subscribers to " << filename_ << ": " << strerror(errno);
+        }
         for (const auto& kv : map_) {
             f << kv.first << endl;
             LOG_DEBUG() << "Written subscriber " << kv.first;

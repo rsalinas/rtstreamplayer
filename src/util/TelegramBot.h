@@ -12,7 +12,7 @@ public:
         virtual void runCommand(int64_t clientId, const std::string& cmdline) = 0;
     };
 
-    TelegramBot(const Properties& props, Listener& listener);
+    TelegramBot(const std::string& appname, const Properties& props, Listener& listener);
     ~TelegramBot();
 
     bool sendMessageToSubscribed(const std::string& msg);

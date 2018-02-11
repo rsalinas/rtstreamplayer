@@ -23,9 +23,11 @@ TelegramBot::~TelegramBot() {
     LOG_INFO() << __FUNCTION__;
 }
 
-TelegramBot::TelegramBot(const Properties& props, Listener& listener)
-    : props_(props), listener_(listener)
-    , bot(props_.getString("tgbot.token", "")) {
+TelegramBot::TelegramBot(const std::string& appname, const Properties& props, Listener& listener)
+    : props_(props)
+    , listener_(listener)
+    , bot(props_.getString("tgbot.token", ""))
+    , subscriptionManager_(appname + ".subscribers") {
     registerCommand("start", "Start command", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, "Welcome!");
         bot.getApi().sendMessage(message->chat->id, getHelp());
@@ -49,15 +51,15 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
         bot.getApi().sendMessage(message->chat->id, "Ignored");
         //        running_ = false;
     });
-    registerCommand("set", [this](TgBot::Message::Ptr message) {
-        bot.getApi().sendMessage(message->chat->id, "set param value", false, message->messageId);
-    });
+//    registerCommand("set", [this](TgBot::Message::Ptr message) {
+//        bot.getApi().sendMessage(message->chat->id, "set param value", false, message->messageId);
+//    });
     registerCommand("params", "Get parameters", [this](TgBot::Message::Ptr message) {
         bot.getApi().sendMessage(message->chat->id, paramHelp_);
     });
-    registerCommand("get", [this](TgBot::Message::Ptr message) {
-        bot.getApi().sendMessage(message->chat->id, std::string{"get param -> "}  + message->text );
-    });
+//    registerCommand("get", [this](TgBot::Message::Ptr message) {
+//        bot.getApi().sendMessage(message->chat->id, std::string{"get param -> "}  + message->text );
+//    });
 
     registerCommand("subscribe", "Subscribe to events", [this](TgBot::Message::Ptr message) {
         subscribe(message->chat->id);

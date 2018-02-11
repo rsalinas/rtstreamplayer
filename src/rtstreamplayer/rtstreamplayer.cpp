@@ -14,6 +14,8 @@
 
 using namespace std;
 
+static const std::string exeTimestamp = execCmd(string{"stat -L /proc/"}+to_string(getpid())+"/exe  --format %y");
+
 struct Param  {
     std::string name;
     std::string defvalue;
@@ -30,14 +32,30 @@ static const std::vector<Param> params = {
     {"backup_stop", "./backup-stop.sh","Command  that stops the backup streaming"},
 };
 
+
 std::string RtStreamPlayer::currentStatus() {
     stringstream ss;
+    auto now = steady_clock::now();
+    auto endl = '\n';
+    ss << "Core version: " << exeTimestamp << '\n';
     if (muted_) {
-        ss << "Muted: YES. /unmute?" << '\n';
+        ss << "Muted: Yes. /unmute?" << '\n';
+    } else {
+        ss << "Muted: No." << '\n';
     }
-    ss << "Sample rate : " << samplerate ;
-    ss << " Channels    : "  << channels;
-    ss << " Format: " <<  sndfile->format();
+    ss << "Format: "
+       << "Sample rate : " << samplerate
+       << " Channels    : "  << channels
+       << " Format: " <<  sndfile->format() << '\n';
+
+    ss << "Uptime:" << '\n';
+    ss << "  Host: " << secondsToHuman(atoi(readFileFully("/proc/uptime").c_str())) << endl;
+    ss << "  App: " << secondsToHuman(duration_cast<duration<double>>(now - appStartTime).count())<< '\n';
+    ss << "  Stream: " << secondsToHuman(duration_cast<duration<double>>(now - startTime).count())<< '\n';
+    ss << endl;
+    ss << "Quality since app start" << endl;
+    ss << "  Underruns: " << underrunCount << endl;
+    ss << "  Total downtime: " << secondsToHuman(downTime) << endl;
     return ss.str();
 }
 
@@ -253,7 +271,7 @@ void RtStreamPlayer::fill_audio(Uint8 *stream, int len)
 
     if (buf->usedSamples * 2 != len) {
         LOG_WARN() << "buffer size mismatch: " <<  buf->usedSamples * 2 << " vs "
-               << len ;
+                   << len ;
     }
 
     if (muted_ || buf->usedSamples * 2 != len) {
@@ -307,30 +325,21 @@ bool RtStreamPlayer::stopBackupSource() {
 
 const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::commands_ = {
     {"cpuinfo", CommandSpec{MqttServer::CommandMeta{false,"Get CPU info"},  [](std::string, RtStreamPlayer* self)  {
-                                std::ifstream t("/proc/cpuinfo");
-                                std::string str((std::istreambuf_iterator<char>(t)),
-                                std::istreambuf_iterator<char>());
-                                return str;
+                                return readFileFully("/proc/cpuinfo");
                             } }},
     {"quit", CommandSpec{MqttServer::CommandMeta{true, "Stop rtsp server"}, [](std::string, RtStreamPlayer* self)  {
                              self->pleaseFinish();
-                             return "Quitting!";
+                             self->mqttServer.setServerStatus("Quitting");
+                             return "";
                          }}},
     {"temp", CommandSpec{MqttServer::CommandMeta{false, "Get CPU temperature"}, [](std::string, RtStreamPlayer* self)  {
-                             std::ifstream t("/sys/class/thermal/thermal_zone0/temp");
-                             std::string str((std::istreambuf_iterator<char>(t)),
-                             std::istreambuf_iterator<char>());
-                             return std::to_string(atof(str.c_str()) / 1000) + std::string{" ºC"};
-
+                             return std::to_string(atof(readFileFully("/sys/class/thermal/thermal_zone0/temp").c_str()) / 1000) + std::string{" ºC"};
                          }}},
     {"status", CommandSpec{MqttServer::CommandMeta{false, "Get current state"}, [](std::string, RtStreamPlayer* self)  {
                                return self->currentStatus();
                            }}},
     {"uptime", CommandSpec{MqttServer::CommandMeta{false, "Get uptime of host and services"}, [](std::string, RtStreamPlayer* self)  {
-                               std::ifstream t("/proc/uptime");
-                               std::string str((std::istreambuf_iterator<char>(t)),
-                               std::istreambuf_iterator<char>());
-                               return str;
+                               return readFileFully("/proc/uptime");
                            }}},
     {"mute", CommandSpec{MqttServer::CommandMeta{true, "Mute output. Flow is not interrupted"}, [](std::string, RtStreamPlayer* self)  {
                              if (self->muted_) {

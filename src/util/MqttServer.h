@@ -19,7 +19,7 @@ public:
 
     MqttServer(const std::string& serverPrefix);
     ~MqttServer();
-    void run(Listener& listener);
+    void run(Listener& listener, int timeoutMs);
     void pleaseFinish() {
         running_ = false;
     }
@@ -40,7 +40,7 @@ private:
 class AutoJoiningThread : public std::thread {
 public:
     AutoJoiningThread(MqttServer &mqttServer, MqttServer::Listener& listener) : std::thread([&] () {
-        mqttServer.run(listener);
+        mqttServer.run(listener, 1000);
     }), mqttServer(mqttServer) {
     }
     ~AutoJoiningThread() {
