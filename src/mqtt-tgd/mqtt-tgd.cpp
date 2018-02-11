@@ -39,16 +39,13 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
     }
 
 
-    Main()
-        : props_("config.props")
-        , mc("rtsp", *this)
+    Main(const char* serverPrefix, const char* configFile)
+        : props_(configFile)
+        , mc(serverPrefix, *this)
         , bot(props_,*this) {
         mqttThread_ = std::thread{[this]() {
             mc.run();
         }};
-
-
-
     }
     ~Main() {
         mqttThread_.join();
@@ -59,14 +56,6 @@ struct Main : public MqttClient::Listener, TelegramBot::Listener {
     }
 
     int run() {
-//        LOG_DEBUG() << "Set signals";
-//        auto finishHandler = [](int signo) {
-//            LOG_INFO() << "signal " << signo;
-//            clog << "signal " << signo << endl;
-
-//        };
-//        SignalHandler intHandler{SIGINT, finishHandler};
-//        SignalHandler termHandler{SIGTERM, finishHandler};
         bot.run();
         return EXIT_SUCCESS;
     }
@@ -77,5 +66,5 @@ private:
 };
 
 int main() {
-    return Main{}.run();
+    return Main{"rtsp", "config.props"}.run();
 }

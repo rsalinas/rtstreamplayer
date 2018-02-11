@@ -30,8 +30,6 @@ static const std::vector<Param> params = {
     {"backup_stop", "./backup-stop.sh","Command  that stops the backup streaming"},
 };
 
-
-
 std::string RtStreamPlayer::currentStatus() {
     stringstream ss;
     ss << "Sample rate : " << samplerate ;

@@ -12,10 +12,10 @@ MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
     , listener_(listener)
     , mosquitto_(__FUNCTION__, "localhost", 1883, &running_) {
     mosquitto_.setListener(*this);
-    mosquitto_.subscribe("rtsp/response/#", [this](std::string topic, std::string value) {
+    mosquitto_.subscribe(serverPrefix_ + "/response/#", [this](std::string topic, std::string value) {
         try {
             auto ss = splitString(topic, '/');
-            if (startsWith(topic, "rtsp/response/") && ss.size() == 3) {
+            if (startsWith(topic, serverPrefix_+ "/response/") && ss.size() == 3) {
                 listener_.messageForUser(ss[2], value);
                 return;
             }
@@ -23,14 +23,14 @@ MqttClient::MqttClient(const std::string& serverPrefix, Listener& listener)
             LOG_WARN() << "Exception writing to telegram";
         }
     });
-    mosquitto_.subscribe("rtsp/state", [this](std::string topic, std::string value) {
+    mosquitto_.subscribe(serverPrefix_ + "/state", [this](std::string topic, std::string value) {
         listener_.statusChanged(value);
 
     });
-    mosquitto_.subscribe("rtsp/commands",  [this](std::string topic, std::string value) {
+    mosquitto_.subscribe(serverPrefix_ + "/commands",  [this](std::string topic, std::string value) {
         listener_.setCommands(splitString(value, ','));
     });
-    mosquitto_.subscribe("rtsp/params",  [this](std::string topic, std::string value) {
+    mosquitto_.subscribe(serverPrefix_ + "/params",  [this](std::string topic, std::string value) {
         LOG_DEBUG() << "PARAMETROS: " << topic << ":" << value ;
         listener_.setParams(value);
     });
@@ -49,7 +49,7 @@ void MqttClient::run() {
 
 void MqttClient::runCommand(int64_t clientId, const std::string& cmdline) {
     LOG_DEBUG() << __FUNCTION__ << clientId << ": " << cmdline ;
-    mosquitto_.sendMessage((std::string{"rtsp/cmd/"}+to_string(clientId)).c_str(), cmdline);
+    mosquitto_.sendMessage((serverPrefix_ + "/cmd/" +to_string(clientId)).c_str(), cmdline);
 }
 
 void MqttClient::onMessage(const std::string& topic, const std::string& value) {

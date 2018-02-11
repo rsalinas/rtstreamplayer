@@ -61,17 +61,21 @@ TelegramBot::TelegramBot(const Properties& props, Listener& listener)
 
     registerCommand("subscribe", "Subscribe to events", [this](TgBot::Message::Ptr message) {
         subscribe(message->chat->id);
-        bot.getApi().sendMessage(message->chat->id, "Subscribed. Total subscriptors: " + subscriptionManager_.getSubscriptors().size());
+        bot.getApi().sendMessage(message->chat->id, string{"Subscribed. Total subscriptors: "} + to_string(subscriptionManager_.getSubscriptors().size()));
+        subscriptionManager_.persist();
     });
 
     registerCommand("unsubscribe", "Subscribe to events", [this](TgBot::Message::Ptr message) {
         unsubscribe(message->chat->id);
-        bot.getApi().sendMessage(message->chat->id, "Unsubscribed. Total subscriptors: " + subscriptionManager_.getSubscriptors().size());
+        subscriptionManager_.persist();
+        bot.getApi().sendMessage(message->chat->id, string{"Unsubscribed. Total subscriptors: "} + to_string(subscriptionManager_.getSubscriptors().size()));
     });
 
     bot.getEvents().onNonCommandMessage([this](TgBot::Message::Ptr message) {
         if (message->audio) {
             clog << "It is an audio!"<<endl;
+            bot.getApi().sendMessage(message->chat->id, "Thanks for your audio, doing nothing");
+
         }
         printf("User wrote %s\n", message->text.c_str());
         if (StringTools::startsWith(message->text, "/start")) {
