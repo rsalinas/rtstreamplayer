@@ -32,6 +32,9 @@ static const std::vector<Param> params = {
 
 std::string RtStreamPlayer::currentStatus() {
     stringstream ss;
+    if (muted_) {
+        ss << "Muted: YES. /unmute?" << '\n';
+    }
     ss << "Sample rate : " << samplerate ;
     ss << " Channels    : "  << channels;
     ss << " Format: " <<  sndfile->format();
@@ -330,10 +333,16 @@ const std::map<std::string, RtStreamPlayer::CommandSpec> RtStreamPlayer::command
                                return str;
                            }}},
     {"mute", CommandSpec{MqttServer::CommandMeta{true, "Mute output. Flow is not interrupted"}, [](std::string, RtStreamPlayer* self)  {
+                             if (self->muted_) {
+                                 return "Was already muted";
+                             }
                              self->muted_ = true;
                              return "Muted. Resume with /unmute";
                          }}},
     {"unmute", CommandSpec{MqttServer::CommandMeta{true, "Unmute output, normal operation."}, [](std::string, RtStreamPlayer* self)  {
+                               if (!self->muted_) {
+                                   return "Was not muted";
+                               }
                                self->muted_ = false;
                                return "Unmuted. Mute with /mute";
                            }}},
