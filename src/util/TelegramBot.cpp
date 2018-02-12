@@ -143,10 +143,10 @@ void TelegramBot::run() {
             longPoll.start();
         } catch (const TgBot::TgException& e) {
             clog << "Exception in TelegramBot::run(): " << e.what() << endl;
-            throw;
+//            throw;
         } catch (...) {
             LOG_WARN() << "Exception";
-            throw;
+//            throw;
         }
     }
 }
@@ -160,11 +160,16 @@ void TelegramBot::setServerStatus(const std::string& str) {
 }
 
 bool TelegramBot::sendMessageToSubscribed(const std::string& msg) {
+    clog << __FUNCTION__ << " " << msg << endl;
+    if (msg.empty()) {
+        LOG_WARN() << "Ignoring empty message for subscribed";
+        return false;
+    }
     std::vector<uint64_t> ids;
     for (auto str : subscriptionManager_.getSubscriptors()) {
         ids.push_back(std::stoul(str));
     }
-    for (auto id :  ids) { //FIXME
+    for (auto id : ids) {
         auto m =  bot.getApi().sendMessage(id, msg);
     }
     return true;
@@ -172,6 +177,12 @@ bool TelegramBot::sendMessageToSubscribed(const std::string& msg) {
 
 
 bool TelegramBot::sendMessageToUser(const std::string& user, const std::string& message) {
+    clog << __FUNCTION__ << " " << user << " " << message << " SIZE==" << message.size() << endl;
+    if (message.empty()) {
+        LOG_WARN() << "Ignoring empty message for user " << user;
+        return false;
+    }
+
     auto id = strtoll(user.c_str(), NULL, 10);
     clog << __FUNCTION__ << " tg id: " << id << " MSG: " << message << endl;
     auto m = bot.getApi().sendMessage(id, message.substr(0, 4096));
