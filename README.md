@@ -11,23 +11,23 @@ A stream player that tries to keep the delay with the source minimum, regardless
 
 # Telegram bot service
 
-/start - Start command
-/help - Show this help
-/ip - Show server's IP
-/bot_version - Show this software's version
-/quitbot - Stop the Telegram bot
-/params - Get parameters
-/subscribe - Subscribe to events
-/unsubscribe - Subscribe to events
+* /start - Start command
+* /help - Show this help
+* /ip - Show server's IP
+* /bot_version - Show this software's version
+* /quitbot - Stop the Telegram bot
+* /params - Get parameters
+* /subscribe - Subscribe to events
+* /unsubscribe - Subscribe to events
 
-/mute - Disable output
-/unmute - Reenable output
-/player_version - Show timestamp of core's binary
-/quit - Exit the core
-/reopen - Close the input stream and reopen it
-/status - Show internal status (statistics, uptime etc) 
-/temp - Show system's CPU temperature
-/uptime - Show system uptime
+* /mute - Disable output
+* /unmute - Reenable output
+* /player_version - Show timestamp of core's binary
+* /quit - Exit the core
+* /reopen - Close the input stream and reopen it
+* /status - Show internal status (statistics, uptime etc) 
+* /temp - Show system's CPU temperature
+* /uptime - Show system uptime
 
 # Mosquitto service
 
