@@ -46,4 +46,6 @@ It is a CMake project using a couple of libraries:
 1. Create a ./source.sh file that outputs RIFF data.
 1. You most certainly want to run it with `daemon`, a tool that relaunches your programs when they fail.
 
+# Author
 
+Written by Raúl Salinas-Monteagudo <rausalinas@gmail.com> for Ràdio Malva (http://radiomalva.org).
